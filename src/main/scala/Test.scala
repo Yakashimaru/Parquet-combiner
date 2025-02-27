@@ -3,9 +3,10 @@ import org.apache.log4j.{Level, Logger}
 
 object TestApp {
   def main(args: Array[String]): Unit = {
-    // Logger.getLogger("org").setLevel(Level.ERROR)
-    // Logger.getLogger("akka").setLevel(Level.ERROR)
     Logger.getRootLogger.setLevel(Level.OFF)
+
+    val dataPath = if (args.length > 0) args(0) else "dataA"
+
     // Initialize Spark session
     val spark = SparkSession.builder
       .appName("Parquet Reader")
@@ -13,7 +14,7 @@ object TestApp {
       .getOrCreate()
 
     // Read the Parquet file
-    val readParquet = spark.read.parquet("data/dataA")
+    val readParquet = spark.read.parquet("data/" + dataPath)
 
     // Show the content of the Parquet file
     readParquet.show()
@@ -32,7 +33,14 @@ object TestApp {
 
     // Summary statistics for numeric columns
     println("Summary statistics for numeric columns:")
-    readParquet.describe("geographical_location_oid", "video_camera_oid", "detection_oid", "timestamp_detected").show()
+    if (dataPath == "dataA") {
+      readParquet.describe("geographical_location_oid", "video_camera_oid", "detection_oid", "timestamp_detected").show()
+    } else if (dataPath == "dataB") {
+      readParquet.describe("geographical_location_oid","geographical_location").show()
+    } 
+    else {
+      readParquet.describe("geographical_location","item_rank","item_name").show()
+    }
 
     // Stop the Spark session
     spark.stop()
