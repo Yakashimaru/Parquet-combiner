@@ -139,7 +139,7 @@ class ParquetCombinerRDDIntegrationTest extends AnyFunSuite with BeforeAndAfterA
     
     // Verify schema - Using modified schema to match actual nullability
     val expectedSchema = StructType(Seq(
-      StructField("geographical_location", StringType, true),  // Changed to 'true' for nullable
+      StructField("geographical_location", LongType, true),  // Changed to 'true' for nullable
       StructField("item_rank", StringType, true),             // Changed to 'true' for nullable
       StructField("item_name", StringType, true)              // Changed to 'true' for nullable
     ))
@@ -167,7 +167,7 @@ class ParquetCombinerRDDIntegrationTest extends AnyFunSuite with BeforeAndAfterA
       .groupBy("geographical_location")  // Changed to 'geographical_location'
       .count()
       .collect()
-      .map(row => (row.getAs[String]("geographical_location"), row.getAs[Long]("count")))
+      .map(row => (row.getAs[Long]("geographical_location"), row.getAs[Long]("count")))
       .toMap
     
     locationCounts.foreach { case (location, count) =>
@@ -184,7 +184,7 @@ class ParquetCombinerRDDIntegrationTest extends AnyFunSuite with BeforeAndAfterA
     """).collect()
     
     rankingCheck.foreach { row =>
-      val location = row.getAs[String]("geographical_location")
+      val location = row.getAs[Long]("geographical_location")
       val uniqueRanks = row.getAs[Long]("unique_ranks")
       val minRank = row.getAs[String]("min_rank")
       val maxRank = row.getAs[String]("max_rank")
@@ -211,10 +211,10 @@ class ParquetCombinerRDDIntegrationTest extends AnyFunSuite with BeforeAndAfterA
     
     // Verify each location has exactly 2 items
     val locationCounts = outputDF
-      .groupBy("geographical_location")  // Changed to 'geographical_location'
+      .groupBy("geographical_location") 
       .count()
       .collect()
-      .map(row => (row.getAs[String]("geographical_location"), row.getAs[Long]("count")))
+      .map(row => (row.getAs[Long]("geographical_location"), row.getAs[Long]("count")))
       .toMap
     
     locationCounts.foreach { case (location, count) =>
