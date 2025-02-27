@@ -33,7 +33,7 @@ object ParquetCombinerRDD {
   
   // Case class for the output data structure
   case class Result(
-    geographical_location: Long, //bigint
+    geographical_location: String, //varchar
     item_rank: String, //varchar
     item_name: String //varchar
   )
@@ -90,7 +90,7 @@ object ParquetCombinerRDD {
       
       // Define output schema explicitly
       val outputSchema = StructType(Seq(
-        StructField("geographical_location", LongType, true), 
+        StructField("geographical_location", StringType, true), 
         StructField("item_rank", StringType, true),
         StructField("item_name", StringType, true)
       ))
@@ -157,21 +157,21 @@ object ParquetCombinerRDD {
     val joined = deduplicatedDataA.keyBy(_.geographical_location_oid)
       .join(locationKeyedDataB)
       .map { case (_, (dataA, dataB)) => 
-        (dataB.geographical_location_oid, dataA.item_name)
+        (dataB.geographical_location, dataA.item_name)
       }
       
     // Step 3: Count items by location and name
-    val counted = joined.map { case (geographical_location_oid, itemName) => 
-      ((geographical_location_oid, itemName), 1)
+    val counted = joined.map { case (geographical_location, itemName) => 
+      ((geographical_location, itemName), 1)
     }.reduceByKey(_ + _)
-      .map { case ((geographical_location_oid, itemName), count) => 
-        (geographical_location_oid, (itemName, count))
+      .map { case ((geographical_location, itemName), count) => 
+        (geographical_location, (itemName, count))
       }
     
     // Step 4: Group by location, then rank items within each location
     val grouped = counted.groupByKey()
     
-    val ranked = grouped.flatMap { case (geographical_location_oid, itemsWithCounts) => 
+    val ranked = grouped.flatMap { case (geographical_location, itemsWithCounts) => 
       // Sort items by count (descending) and take top X
       val topItems = itemsWithCounts.toSeq
         .sortBy(-_._2) // Sort by count descending
@@ -180,7 +180,7 @@ object ParquetCombinerRDD {
       
       // Convert to final result format with the corrected field name
       topItems.map { case ((itemName, _), index) => 
-        Result(geographical_location_oid, (index + 1).toString, itemName) // index + 1 for 1-based ranking
+        Result(geographical_location, (index + 1).toString, itemName) // index + 1 for 1-based ranking
       }
     }
     

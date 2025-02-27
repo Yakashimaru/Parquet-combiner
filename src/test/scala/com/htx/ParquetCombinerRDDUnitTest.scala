@@ -36,100 +36,21 @@ class ParquetCombinerRDDUnitTest extends AnyFunSuite with BeforeAndAfterAll {
     super.afterAll()
   }
   
-  // Helper method to create test data
-  private def createTestDataA(testCases: Seq[(Long, Long, Long, String, Long)]): RDD[ParquetCombinerRDD.DataA] = {
-    sc.parallelize(testCases.map { case (loc, camera, detect, item, time) =>
-      ParquetCombinerRDD.DataA(loc, camera, detect, item, time)
-    })
-  }
-  
-  // Helper method to create location data
-  private def createTestDataB(testCases: Seq[(Long, String)]): RDD[ParquetCombinerRDD.DataB] = {
-    sc.parallelize(testCases.map { case (id, name) =>
-      ParquetCombinerRDD.DataB(id, name)
-    })
-  }
-  
-  test("processRDDs should deduplicate and join correctly") {
-    // Create test data with duplicated detection_oid
-    val dataA = createTestDataA(Seq(
-      (1L, 101L, 1001L, "item1", 1620000000L),
-      (1L, 102L, 1001L, "item1", 1620000001L),  // Duplicate detection_oid
-      (2L, 103L, 1002L, "item2", 1620000002L)
-    ))
-    
-    val dataB = createTestDataB(Seq(
-      (1L, "Location A"),
-      (2L, "Location B")
-    ))
-    
-    // Call processRDDs with topX = 1 to get only the top item for each location
-    val result = ParquetCombinerRDD.processRDDs(dataA, dataB, 1).collect()
-    
-    // Verify results
-    assert(result.length === 2, "Should have 2 items (one from each location)")
-    
-    // Verify location mapping
-    val locationAResults = result.filter(_.geographical_location == 1L)
-    val locationBResults = result.filter(_.geographical_location == 2L)
-    
-    assert(locationAResults.length === 1, "Location A should have 1 item")
-    assert(locationBResults.length === 1, "Location B should have 1 item")
-    
-    // Verify the items match
-    assert(locationAResults.head.item_name == "item1", "Location A should have item1")
-    assert(locationBResults.head.item_name == "item2", "Location B should have item2")
-  }
-  
-  // We can test the implicit ranking functionality in processRDDs instead
-  test("processRDDs should sort and rank items correctly") {
-    // Test data with different item counts
-    val testData = Seq(
-      // Location 1 has: 3 item1, 2 item2, 1 item3
-      (1L, 101L, 1001L, "item1", 1620000000L),
-      (1L, 102L, 1002L, "item1", 1620000001L),
-      (1L, 103L, 1003L, "item1", 1620000002L),
-      (1L, 104L, 1004L, "item2", 1620000003L),
-      (1L, 105L, 1005L, "item2", 1620000004L),
-      (1L, 106L, 1006L, "item3", 1620000005L)
-    )
-    
-    val dataA = createTestDataA(testData)
-    val dataB = createTestDataB(Seq((1L, "Location A")))
-    
-    // Get top 3 items
-    val results = ParquetCombinerRDD.processRDDs(dataA, dataB, 3).collect()
-    
-    // Verify results
-    assert(results.length === 3, "Should return exactly 3 items")
-    
-    // Sort by rank to verify ordering
-    val sortedResults = results.sortBy(_.item_rank)
-    
-    // Verify ranking order based on count: item1(3) > item2(2) > item3(1)
-    assert(sortedResults(0).item_name === "item1" && sortedResults(0).item_rank === "1", "First rank should be item1")
-    assert(sortedResults(1).item_name === "item2" && sortedResults(1).item_rank === "2", "Second rank should be item2")
-    assert(sortedResults(2).item_name === "item3" && sortedResults(2).item_rank === "3", "Third rank should be item3")
-    
-    // Verify all items have the correct location
-    assert(results.forall(_.geographical_location === 1L), "All results should have the correct location")
-  }
-  
   test("processRDDs should correctly handle deduplicated detection_oid") {
     // Create test data with duplicated detection_oid
-    val dataA = createTestDataA(Seq(
-      (1L, 101L, 1001L, "item1", 1620000000L),
-      (1L, 102L, 1001L, "item1", 1620000001L),  // Duplicate detection_oid
-      (2L, 103L, 1002L, "item2", 1620000002L),
-      (2L, 104L, 1003L, "item3", 1620000003L),
-      (3L, 105L, 1004L, "item1", 1620000004L),
-      (3L, 106L, 1005L, "item2", 1620000005L)
+    val dataA = sc.parallelize(Seq(
+      ParquetCombinerRDD.DataA(1L, 101L, 1001L, "item1", 1620000000L),
+      ParquetCombinerRDD.DataA(1L, 102L, 1001L, "item1", 1620000001L),  // Duplicate detection_oid
+      ParquetCombinerRDD.DataA(2L, 103L, 1002L, "item2", 1620000002L),
+      ParquetCombinerRDD.DataA(2L, 104L, 1003L, "item3", 1620000003L),
+      ParquetCombinerRDD.DataA(3L, 105L, 1004L, "item1", 1620000004L),
+      ParquetCombinerRDD.DataA(3L, 106L, 1005L, "item2", 1620000005L)
     ))
     
-    val dataB = createTestDataB(Seq(
-      (1L, "Location A"),
-      (2L, "Location B"),
-      (3L, "Location C")
+    val dataB = sc.parallelize(Seq(
+      ParquetCombinerRDD.DataB(1L, "Location A"),
+      ParquetCombinerRDD.DataB(2L, "Location B"),
+      ParquetCombinerRDD.DataB(3L, "Location C")
     ))
     
     // Process the test data
@@ -138,58 +59,55 @@ class ParquetCombinerRDDUnitTest extends AnyFunSuite with BeforeAndAfterAll {
     
     // Verify results
     
-    // Check total result count: 3 locations x up to 2 items per location
+    // Check total result count: 3 locations x 2 items per location = 6 results (minus duplicates)
     // But Location A has only one unique item after deduplication, so total should be 5
-    assert(result.length === 5, "Should have 5 items total after deduplication")
+    assert(result.length === 5)
     
     // Verify Location A has only one item (item1) after deduplication
-    val locationAResults = result.filter(_.geographical_location == 1L)
-    assert(locationAResults.length === 1, "Location A should have 1 item")
-    assert(locationAResults.exists(r => r.item_name == "item1" && r.item_rank == "1"), 
-           "Location A should have item1 with rank 1")
+    val locationAResults = result.filter(_.geographical_location == "Location A")
+    assert(locationAResults.length === 1)
+    assert(locationAResults.exists(r => r.item_name == "item1" && r.item_rank == "1"))
     
     // Verify Location B has two items (item2 and item3)
-    val locationBResults = result.filter(_.geographical_location == 2L)
-    assert(locationBResults.length === 2, "Location B should have 2 items")
-    
-    // Sort the results by rank for verification
-    val sortedLocationBResults = locationBResults.sortBy(_.item_rank)
-    assert(sortedLocationBResults(0).item_rank == "1" && sortedLocationBResults(1).item_rank == "2",
-           "Location B should have items with ranks 1 and 2")
+    val locationBResults = result.filter(_.geographical_location == "Location B")
+    assert(locationBResults.length === 2)
+    assert(locationBResults.exists(r => r.item_name == "item2" && r.item_rank == "1") || 
+           locationBResults.exists(r => r.item_name == "item2" && r.item_rank == "2"))
+    assert(locationBResults.exists(r => r.item_name == "item3" && r.item_rank == "1") || 
+           locationBResults.exists(r => r.item_name == "item3" && r.item_rank == "2"))
     
     // Verify Location C has two items (item1 and item2)
-    val locationCResults = result.filter(_.geographical_location == 3L)
-    assert(locationCResults.length === 2, "Location C should have 2 items")
-    
-    // Sort the results by rank for verification
-    val sortedLocationCResults = locationCResults.sortBy(_.item_rank)
-    assert(sortedLocationCResults(0).item_rank == "1" && sortedLocationCResults(1).item_rank == "2",
-           "Location C should have items with ranks 1 and 2")
+    val locationCResults = result.filter(_.geographical_location == "Location C")
+    assert(locationCResults.length === 2)
+    assert(locationCResults.exists(r => r.item_name == "item1" && r.item_rank == "1") || 
+           locationCResults.exists(r => r.item_name == "item1" && r.item_rank == "2"))
+    assert(locationCResults.exists(r => r.item_name == "item2" && r.item_rank == "1") || 
+           locationCResults.exists(r => r.item_name == "item2" && r.item_rank == "2"))
   }
   
   test("processRDDs should correctly rank items by count") {
     // Create test data with different item counts
-    val dataA = createTestDataA(Seq(
+    val dataA = sc.parallelize(Seq(
       // Location 1 has: 3 item1, 2 item2, 1 item3
-      (1L, 101L, 1001L, "item1", 1620000000L),
-      (1L, 102L, 1002L, "item1", 1620000001L),
-      (1L, 103L, 1003L, "item1", 1620000002L),
-      (1L, 104L, 1004L, "item2", 1620000003L),
-      (1L, 105L, 1005L, "item2", 1620000004L),
-      (1L, 106L, 1006L, "item3", 1620000005L),
+      ParquetCombinerRDD.DataA(1L, 101L, 1001L, "item1", 1620000000L),
+      ParquetCombinerRDD.DataA(1L, 102L, 1002L, "item1", 1620000001L),
+      ParquetCombinerRDD.DataA(1L, 103L, 1003L, "item1", 1620000002L),
+      ParquetCombinerRDD.DataA(1L, 104L, 1004L, "item2", 1620000003L),
+      ParquetCombinerRDD.DataA(1L, 105L, 1005L, "item2", 1620000004L),
+      ParquetCombinerRDD.DataA(1L, 106L, 1006L, "item3", 1620000005L),
       
       // Location 2 has: 1 item1, 3 item2, 2 item3
-      (2L, 201L, 2001L, "item1", 1620000006L),
-      (2L, 202L, 2002L, "item2", 1620000007L),
-      (2L, 203L, 2003L, "item2", 1620000008L),
-      (2L, 204L, 2004L, "item2", 1620000009L),
-      (2L, 205L, 2005L, "item3", 1620000010L),
-      (2L, 206L, 2006L, "item3", 1620000011L)
+      ParquetCombinerRDD.DataA(2L, 201L, 2001L, "item1", 1620000006L),
+      ParquetCombinerRDD.DataA(2L, 202L, 2002L, "item2", 1620000007L),
+      ParquetCombinerRDD.DataA(2L, 203L, 2003L, "item2", 1620000008L),
+      ParquetCombinerRDD.DataA(2L, 204L, 2004L, "item2", 1620000009L),
+      ParquetCombinerRDD.DataA(2L, 205L, 2005L, "item3", 1620000010L),
+      ParquetCombinerRDD.DataA(2L, 206L, 2006L, "item3", 1620000011L)
     ))
     
-    val dataB = createTestDataB(Seq(
-      (1L, "Location A"),
-      (2L, "Location B")
+    val dataB = sc.parallelize(Seq(
+      ParquetCombinerRDD.DataB(1L, "Location A"),
+      ParquetCombinerRDD.DataB(2L, "Location B")
     ))
     
     // Process the test data
@@ -199,38 +117,36 @@ class ParquetCombinerRDDUnitTest extends AnyFunSuite with BeforeAndAfterAll {
     // Verify results
     
     // Check total result count: 2 locations x 3 items per location = 6 results
-    assert(result.length === 6, "Should have 6 items total")
+    assert(result.length === 6)
     
     // Verify Location A ranking: item1 (rank 1), item2 (rank 2), item3 (rank 3)
-    val locationAResults = result.filter(_.geographical_location == 1L)
-                                .sortBy(_.item_rank)
-    assert(locationAResults.length === 3, "Location A should have 3 items")
-    assert(locationAResults(0).item_name === "item1", "Location A rank 1 should be item1")
-    assert(locationAResults(1).item_name === "item2", "Location A rank 2 should be item2")
-    assert(locationAResults(2).item_name === "item3", "Location A rank 3 should be item3")
+    val locationAResults = result.filter(_.geographical_location == "Location A")
+    assert(locationAResults.length === 3)
+    assert(locationAResults.exists(r => r.item_name == "item1" && r.item_rank == "1"))
+    assert(locationAResults.exists(r => r.item_name == "item2" && r.item_rank == "2"))
+    assert(locationAResults.exists(r => r.item_name == "item3" && r.item_rank == "3"))
     
     // Verify Location B ranking: item2 (rank 1), item3 (rank 2), item1 (rank 3)
-    val locationBResults = result.filter(_.geographical_location == 2L)
-                                .sortBy(_.item_rank)
-    assert(locationBResults.length === 3, "Location B should have 3 items")
-    assert(locationBResults(0).item_name === "item2", "Location B rank 1 should be item2")
-    assert(locationBResults(1).item_name === "item3", "Location B rank 2 should be item3")
-    assert(locationBResults(2).item_name === "item1", "Location B rank 3 should be item1")
+    val locationBResults = result.filter(_.geographical_location == "Location B")
+    assert(locationBResults.length === 3)
+    assert(locationBResults.exists(r => r.item_name == "item2" && r.item_rank == "1"))
+    assert(locationBResults.exists(r => r.item_name == "item3" && r.item_rank == "2"))
+    assert(locationBResults.exists(r => r.item_name == "item1" && r.item_rank == "3"))
   }
   
   test("processRDDs should respect the topX parameter") {
     // Create test data with various item counts
-    val dataA = createTestDataA(Seq(
+    val dataA = sc.parallelize(Seq(
       // Location has 5 different items
-      (1L, 101L, 1001L, "item1", 1620000000L),
-      (1L, 102L, 1002L, "item2", 1620000001L),
-      (1L, 103L, 1003L, "item3", 1620000002L),
-      (1L, 104L, 1004L, "item4", 1620000003L),
-      (1L, 105L, 1005L, "item5", 1620000004L)
+      ParquetCombinerRDD.DataA(1L, 101L, 1001L, "item1", 1620000000L),
+      ParquetCombinerRDD.DataA(1L, 102L, 1002L, "item2", 1620000001L),
+      ParquetCombinerRDD.DataA(1L, 103L, 1003L, "item3", 1620000002L),
+      ParquetCombinerRDD.DataA(1L, 104L, 1004L, "item4", 1620000003L),
+      ParquetCombinerRDD.DataA(1L, 105L, 1005L, "item5", 1620000004L)
     ))
     
-    val dataB = createTestDataB(Seq(
-      (1L, "Location A")
+    val dataB = sc.parallelize(Seq(
+      ParquetCombinerRDD.DataB(1L, "Location A")
     ))
     
     // Test with topX = 2
@@ -239,11 +155,11 @@ class ParquetCombinerRDDUnitTest extends AnyFunSuite with BeforeAndAfterAll {
     
     // Verify results
     // Should only return 2 results for Location A
-    assert(result.length === 2, "Should have 2 items when topX = 2")
+    assert(result.length === 2)
     
     // Check that ranks are correct
     val ranks = result.map(_.item_rank).sorted
-    assert(ranks.sameElements(Array("1", "2")), "Ranks should be 1 and 2")
+    assert(ranks.sameElements(Array("1", "2")))
     
     // Test with topX = 4
     val topX2 = 4
@@ -251,19 +167,19 @@ class ParquetCombinerRDDUnitTest extends AnyFunSuite with BeforeAndAfterAll {
     
     // Verify results
     // Should return 4 results for Location A
-    assert(result2.length === 4, "Should have 4 items when topX = 4")
+    assert(result2.length === 4)
     
     // Check that ranks are correct
     val ranks2 = result2.map(_.item_rank).sorted
-    assert(ranks2.sameElements(Array("1", "2", "3", "4")), "Ranks should be 1, 2, 3, and 4")
+    assert(ranks2.sameElements(Array("1", "2", "3", "4")))
   }
   
   test("processRDDs should handle empty input correctly") {
     // Create empty test data
     val emptyDataA = sc.parallelize(Seq.empty[ParquetCombinerRDD.DataA])
-    val dataB = createTestDataB(Seq(
-      (1L, "Location A"),
-      (2L, "Location B")
+    val dataB = sc.parallelize(Seq(
+      ParquetCombinerRDD.DataB(1L, "Location A"),
+      ParquetCombinerRDD.DataB(2L, "Location B")
     ))
     
     // Process the test data
@@ -272,6 +188,6 @@ class ParquetCombinerRDDUnitTest extends AnyFunSuite with BeforeAndAfterAll {
     
     // Verify results
     // Should return empty result
-    assert(result.isEmpty, "Should return empty result for empty input")
+    assert(result.isEmpty)
   }
 }
