@@ -154,7 +154,7 @@ class ParquetCombinerRDDIntegrationTest extends AnyFunSuite with BeforeAndAfterA
     
     // Check New York's top item
     val nyTopItem = outputDF
-      .filter($"geographical_location" === "New York")  // Changed to 'geographical_location'
+      .filter($"geographical_location" === 1)  //For new york
       .filter($"item_rank" === "1")
       .collect()
     
@@ -164,7 +164,7 @@ class ParquetCombinerRDDIntegrationTest extends AnyFunSuite with BeforeAndAfterA
     
     // Verify each location has at most 3 items
     val locationCounts = outputDF
-      .groupBy("geographical_location")  // Changed to 'geographical_location'
+      .groupBy("geographical_location")  
       .count()
       .collect()
       .map(row => (row.getAs[Long]("geographical_location"), row.getAs[Long]("count")))
@@ -266,12 +266,12 @@ class ParquetCombinerRDDIntegrationTest extends AnyFunSuite with BeforeAndAfterA
     // Read back the output
     val outputDF = spark.read.parquet(duplicateOutputPath)
     
-    // Check the count for New York
+    // Check the count for New York (#1)
     outputDF.createOrReplaceTempView("duplicate_output")
     val results = spark.sql("""
       SELECT item_name, item_rank
       FROM duplicate_output
-      WHERE geographical_location = 'New York'
+      WHERE geographical_location = 1
       ORDER BY item_rank
     """).collect()
     
