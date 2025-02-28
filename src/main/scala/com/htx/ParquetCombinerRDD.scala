@@ -208,24 +208,37 @@ object ParquetCombinerRDD {
     }
     
     val itemCounts = locationItemPairs.reduceByKey(_ + _)
+
+    // Step 6: Creates an array of top items for each location in a single pass
+    // Initial value for each location: empty array of (item, count) pairs
+    val createCombiner = (itemCount: (String, Int)) => Array(itemCount)
     
-    val locationItemCounts = itemCounts.map { 
-      case ((locationOid, itemName), count) => (locationOid, (itemName, count)) 
+    // Add a new value to an existing array, keeping only top X items sorted by count
+    val mergeValue = (topItems: Array[(String, Int)], itemCount: (String, Int)) => {
+      // Add the new item
+      val combined = topItems :+ itemCount
+      // Sort by count descending and take top X
+      combined.sortBy(-_._2).take(topX)
     }
     
-    // Step 6: Group by location and rank items
-    val groupedByLocation = locationItemCounts.groupByKey()
+    // Merge two arrays, keeping only top X items sorted by count
+    val mergeCombiners = (arr1: Array[(String, Int)], arr2: Array[(String, Int)]) => {
+      // Combine the arrays
+      val combined = arr1 ++ arr2
+      // Sort by count descending and take top X
+      combined.sortBy(-_._2).take(topX)
+    }
     
-    val ranked = groupedByLocation.flatMap { case (locationOid, itemsWithCounts) =>
-      // Convert iterable to seq for sorting
-      val itemsSeq = itemsWithCounts.toSeq
-      
-      // Sort by count descending
-      val sortedItems = itemsSeq.sortBy(_._2)(Ordering[Int].reverse)
-      
-      // Take top X items
-      val topItems = sortedItems.take(topX)
-      
+    // Aggregate the top items for each location
+    val topItemsByLocation = itemCounts.map { 
+      case ((locationOid, itemName), count) => (locationOid, (itemName, count)) 
+    }.aggregateByKey(Array.empty[(String, Int)])(
+      mergeValue,
+      mergeCombiners
+    )
+    
+    // Convert to the final Result objects
+    val ranked = topItemsByLocation.flatMap { case (locationOid, topItems) =>
       // Create result objects with rank
       topItems.zipWithIndex.map { case ((itemName, _), index) =>
         Result(locationOid, (index + 1).toString, itemName)
