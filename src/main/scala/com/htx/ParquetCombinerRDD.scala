@@ -1,15 +1,12 @@
 package com.htx
 
-import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.rdd.RDD
-import org.apache.hadoop.fs.Path
-import org.apache.parquet.hadoop.ParquetFileReader
-import org.apache.parquet.hadoop.util.HadoopInputFile
 import org.apache.hadoop.conf.Configuration
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.{SparkSession, Row, SaveMode}
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.StorageLevel
+import scala.collection.Map
 
 /**
  * ParquetCombinerRDD - A utility to combine data from two Parquet files,
@@ -49,6 +46,11 @@ object ParquetCombinerRDD {
     val spark = SparkSession.builder()
       .appName("ParquetCombinerRDD")
       .master("local[*]")
+      // Configure with safe serialization settings
+      .config("spark.serializer", "org.apache.spark.serializer.JavaSerializer") // Use Java serializer instead of Kryo for compatibility
+      .config("spark.sql.shuffle.partitions", "200")
+      .config("spark.default.parallelism", "200")
+      .config("spark.rdd.compress", "true") // Compress RDDs to save memory
       .getOrCreate()
     
     try {
@@ -104,6 +106,7 @@ object ParquetCombinerRDD {
       // Write result to Parquet
       resultDF.write
         .mode(SaveMode.Overwrite)
+        .option("compression", "snappy") // Better compression
         .parquet(outputPath)
       
       println(s"\nProcess completed successfully.")
@@ -141,48 +144,97 @@ object ParquetCombinerRDD {
       )
     )
   }
+
+  /**
+   * Custom implementation of join to avoid using Spark's join operation.
+   * This reduces shuffle operations by broadcasting the smaller RDD.
+   */
+  def customJoin[K, V1, V2](left: RDD[(K, V1)], right: RDD[(K, V2)]): RDD[(K, (V1, V2))] = {
+    // Collect right RDD to driver as an array of (K, V2) pairs
+    val rightArray = right.collect()
+    
+    // Create a map from the array for lookups
+    val rightMap = rightArray.map(pair => (pair._1, pair._2)).toMap
+    
+    // Broadcast the map to all executors
+    val broadcastMap = left.sparkContext.broadcast(rightMap)
+    
+    // Use mapPartitions instead of flatMap for better performance
+    left.mapPartitions(iter => {
+      val bMap = broadcastMap.value
+      iter.flatMap { case (k, v1) =>
+        bMap.get(k) match {
+          case Some(v2) => Iterator.single((k, (v1, v2)))
+          case None => Iterator.empty
+        }
+      }
+    }, preservesPartitioning = true) // Preserve partitioning information
+  }
   
   // Process RDDs to produce the result
   def processRDDs(dataARDD: RDD[DataA], dataBRDD: RDD[DataB], topX: Int): RDD[Result] = {
     // Step 1: Remove duplicate detection_oid values
-    val deduplicatedDataA = dataARDD.keyBy(_.detection_oid)
-      .reduceByKey((a, _) => a)  // Keep the first occurrence of each detection_oid
-      .values
-      .cache() // Cache for performance as we'll reuse this RDD
+    // Extract detection_oid as a key
+    val keyedByDetectionOid = dataARDD.map(dataA => (dataA.detection_oid, dataA))
+    // Reduce by key to keep only the first occurrence
+    val deduplicatedDetections = keyedByDetectionOid.reduceByKey((a, _) => a)
+    // Extract just the values
+    val deduplicatedDataA = deduplicatedDetections.values
     
-    // Step 2: Join with DataB to get geographical locations
-    val locationKeyedDataB = dataBRDD.keyBy(_.geographical_location_oid)
-      .cache() // Cache for performance
+    // Cache the deduplicated RDD for reuse
+    val cachedDeduplicatedDataA = deduplicatedDataA.persist(StorageLevel.MEMORY_AND_DISK_SER)
     
-    val joined = deduplicatedDataA.keyBy(_.geographical_location_oid)
-      .join(locationKeyedDataB)
-      .map { case (_, (dataA, dataB)) => 
-        (dataB.geographical_location_oid, dataA.item_name)
-      }
+    // Step 2: Prepare for custom join by extracting join keys
+    val locationKeyedDataA = cachedDeduplicatedDataA.map(dataA => 
+      (dataA.geographical_location_oid, dataA))
+    
+    val locationKeyedDataB = dataBRDD.map(dataB => 
+      (dataB.geographical_location_oid, dataB))
+    
+    // Cache the smaller dataset (DataB) for reuse
+    val cachedLocationKeyedDataB = locationKeyedDataB.persist(StorageLevel.MEMORY_AND_DISK_SER)
+    
+    // Step 3: Use custom join instead of Spark's join
+    val joined = customJoin(locationKeyedDataA, cachedLocationKeyedDataB)
+    
+    // Step 4: Extract the item name from joined data
+    val locationAndItemName = joined.map { case (_, (dataA, dataB)) =>
+      (dataB.geographical_location_oid, dataA.item_name)
+    }
+    
+    // Step 5: Count items by location and name
+    val locationItemPairs = locationAndItemName.map { 
+      case (locationOid, itemName) => ((locationOid, itemName), 1) 
+    }
+    
+    val itemCounts = locationItemPairs.reduceByKey(_ + _)
+    
+    val locationItemCounts = itemCounts.map { 
+      case ((locationOid, itemName), count) => (locationOid, (itemName, count)) 
+    }
+    
+    // Step 6: Group by location and rank items
+    val groupedByLocation = locationItemCounts.groupByKey()
+    
+    val ranked = groupedByLocation.flatMap { case (locationOid, itemsWithCounts) =>
+      // Convert iterable to seq for sorting
+      val itemsSeq = itemsWithCounts.toSeq
       
-    // Step 3: Count items by location and name
-    val counted = joined.map { case (geographical_location_oid, itemName) => 
-      ((geographical_location_oid, itemName), 1)
-    }.reduceByKey(_ + _)
-      .map { case ((geographical_location_oid, itemName), count) => 
-        (geographical_location_oid, (itemName, count))
-      }
-    
-    // Step 4: Group by location, then rank items within each location
-    val grouped = counted.groupByKey()
-    
-    val ranked = grouped.flatMap { case (geographical_location_oid, itemsWithCounts) => 
-      // Sort items by count (descending) and take top X
-      val topItems = itemsWithCounts.toSeq
-        .sortBy(-_._2) // Sort by count descending
-        .take(topX)    // Take top X
-        .zipWithIndex  // Add index for ranking
+      // Sort by count descending
+      val sortedItems = itemsSeq.sortBy(_._2)(Ordering[Int].reverse)
       
-      // Convert to final result format with the corrected field name
-      topItems.map { case ((itemName, _), index) => 
-        Result(geographical_location_oid, (index + 1).toString, itemName) // index + 1 for 1-based ranking
+      // Take top X items
+      val topItems = sortedItems.take(topX)
+      
+      // Create result objects with rank
+      topItems.zipWithIndex.map { case ((itemName, _), index) =>
+        Result(locationOid, (index + 1).toString, itemName)
       }
     }
+    
+    // Clean up by unpersisting cached RDDs
+    cachedDeduplicatedDataA.unpersist()
+    cachedLocationKeyedDataB.unpersist()
     
     ranked
   }
