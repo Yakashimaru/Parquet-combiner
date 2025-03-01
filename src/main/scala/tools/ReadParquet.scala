@@ -1,7 +1,9 @@
+package tools
+
 import org.apache.spark.sql.{SparkSession, DataFrame}
 import org.apache.log4j.{Level, Logger}
 
-object TestApp {
+object ReadParquet {
   def main(args: Array[String]): Unit = {
     Logger.getRootLogger.setLevel(Level.OFF)
 

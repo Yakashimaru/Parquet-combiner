@@ -1,3 +1,5 @@
+package tools
+
 import org.apache.spark.sql.{SparkSession, SaveMode}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.functions._
