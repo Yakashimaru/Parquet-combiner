@@ -3,6 +3,10 @@ import sbt.Keys._
 val scala2Version = "2.13.16"
 val sparkVersion = "3.5.4"
 
+// Define custom run tasks for different logging levels
+lazy val quietRun = taskKey[Unit]("Runs the application with minimal logging")
+lazy val normalRun = taskKey[Unit]("Runs the application with normal logging")
+
 lazy val root = project
   .in(file("."))
   .settings(
@@ -17,17 +21,6 @@ lazy val root = project
       "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
       "--add-opens=java.base/java.nio=ALL-UNNAMED"
     ),
-    
-    // Control SBT logging more aggressively
-    logLevel := Level.Error,
-    showSuccess := false,
-    suppressSbtShellNotification := true,
-    
-    // Redirect Spark output
-    outputStrategy := Some(StdoutOutput),
-    
-    // Disable all extra output
-    traceLevel := -1,
 
     // Spark dependencies
     libraryDependencies ++= Seq(
@@ -40,20 +33,29 @@ lazy val root = project
 
     // Testing dependencies - updating to include ScalaTest for unit and integration tests
     libraryDependencies ++= Seq(
-      "org.scalameta" %% "munit" % "1.0.0" % Test,
       "org.scalatest" %% "scalatest" % "3.2.15" % Test,
       "org.mockito" % "mockito-core" % "4.11.0" % Test
     ),
 
-    // Custom task to run with minimal logging
-    commands += Command.command("runQuiet") { state =>
-      "set outputStrategy := Some(StdoutOutput)" ::
-      "set logLevel := Level.Error" ::
-      "set traceLevel := -1" ::
-      "runMain ParquetCombinerRDD" ::
-      state
+    // Custom run tasks for different logging levels
+    quietRun := {
+      (Compile / run).toTask(" -Dlog4j.configuration=log4j-quiet.properties").value
     },
     
+    normalRun := {
+      (Compile / run).toTask(" -Dlog4j.configuration=log4j-normal.properties").value
+    },
+    
+    // Ensure log4j configuration files are included in resources
+    Compile / unmanagedResources / includeFilter := "*.properties",
+
+    // Custom command to run with minimal logging 
+    commands += Command.single("quietRunMain") { (state, mainClass) =>
+      s"""set javaOptions += "-Dlog4j.configuration=log4j-quiet.properties"""" ::
+      s"runMain $mainClass" ::
+      state
+    },
+      
     // ScalaStyle configuration
     scalastyleConfig := baseDirectory.value / "scalastyle-config.xml",
     
@@ -77,7 +79,7 @@ lazy val root = project
       "-Wunused:imports"
     ),
     
-    // Ensure tests run in sequence (helpful for Spark tests)
+    // Ensure tests run in sequence 
     Test / parallelExecution := false,
 
     // Add the ScalaStyle plugin settings

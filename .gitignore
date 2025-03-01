@@ -30,3 +30,7 @@ metals.sbt
 .idea
 .idea_modules
 /.worksheet/
+
+# Test data
+src/test/resources/test-data/*
+!src/test/resources/test-data/.gitkeep
