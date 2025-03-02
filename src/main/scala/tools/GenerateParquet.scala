@@ -34,23 +34,75 @@ object GenerateParquet extends Logging {
   private val DEFAULT_NUM_ITEMS = 10
 
   private val BASE_ITEMS = Array(
-    "person", "car", "truck", "bicycle", "motorcycle", 
-    "dog", "cat", "bus", "traffic light", "backpack",
-    "fire hydrant", "stop sign", "parking meter", "bench", 
-    "bird", "boat", "skateboard", "umbrella", "handbag", "tie",
-    "suitcase", "frisbee", "skis", "snowboard", "sports ball", 
-    "kite", "baseball bat", "surfboard", "bottle", "wine glass",
-    "cup", "fork", "knife", "spoon", "bowl", 
-    "laptop", "cell phone", "book", "clock", "vase"
+    "person",
+    "car",
+    "truck",
+    "bicycle",
+    "motorcycle",
+    "dog",
+    "cat",
+    "bus",
+    "traffic light",
+    "backpack",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "bird",
+    "boat",
+    "skateboard",
+    "umbrella",
+    "handbag",
+    "tie",
+    "suitcase",
+    "frisbee",
+    "skis",
+    "snowboard",
+    "sports ball",
+    "kite",
+    "baseball bat",
+    "surfboard",
+    "bottle",
+    "wine glass",
+    "cup",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "laptop",
+    "cell phone",
+    "book",
+    "clock",
+    "vase"
   )
 
   private val CITIES = Array(
-  "New York City", "Los Angeles", "Chicago", "Houston", "Phoenix", 
-  "Philadelphia", "San Antonio", "San Diego", "Dallas", "San Jose",
-  "Austin", "Jacksonville", "Fort Worth", "Columbus", "Indianapolis", 
-  "Charlotte", "Seattle", "Denver", "Boston", "El Paso",
-  "Nashville", "Detroit", "Portland", "Memphis", "Louisville"
-)
+    "New York City",
+    "Los Angeles",
+    "Chicago",
+    "Houston",
+    "Phoenix",
+    "Philadelphia",
+    "San Antonio",
+    "San Diego",
+    "Dallas",
+    "San Jose",
+    "Austin",
+    "Jacksonville",
+    "Fort Worth",
+    "Columbus",
+    "Indianapolis",
+    "Charlotte",
+    "Seattle",
+    "Denver",
+    "Boston",
+    "El Paso",
+    "Nashville",
+    "Detroit",
+    "Portland",
+    "Memphis",
+    "Louisville"
+  )
 
   // scalastyle:off method.length
   def main(args: Array[String]): Unit = {
@@ -151,7 +203,6 @@ object GenerateParquet extends Logging {
   /** Generate location data with city names
     */
   private def generateLocationData(numLocations: Int): Seq[(Long, String)] = {
-    
 
     // Ensure we don't exceed the number of cities we have
     val actualLocations = Math.min(numLocations, CITIES.length)
@@ -172,7 +223,6 @@ object GenerateParquet extends Logging {
     val random = new scala.util.Random(RANDOM_SEED) // For reproducibility
     val currentTime = Instant.now().getEpochSecond
 
-    
     // Ensure we don't exceed the number of base items we have
     val actualNumItems = Math.min(numItems, BASE_ITEMS.length)
     val items = BASE_ITEMS.take(actualNumItems)
