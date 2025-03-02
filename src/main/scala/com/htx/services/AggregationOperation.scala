@@ -14,9 +14,9 @@ import com.htx.models.Models.{DataA, DataB, ResultBase}
   * safety while allowing different result types.
   *
   * Key benefits for geographical data aggregation:
-  *   1. Common interface for all geographic grouping operations 
-  *   2. Type safety through generic parameterization 3. Promotes code reusability 
-  *      by standardizing method signature
+  *   1. Common interface for all geographic grouping operations 2. Type safety
+  *      through generic parameterization 3. Promotes code reusability by
+  *      standardizing method signature
   *
   * Each implementation can reuse common code patterns for deduplication and
   * geographic grouping while implementing specific aggregation logic.

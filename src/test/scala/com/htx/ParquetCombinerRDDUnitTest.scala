@@ -9,12 +9,11 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.rdd.RDD
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.BeforeAndAfterAll
-import org.apache.log4j.{Level, Logger}
 
-// Import the appropriate classes from your new structure
-import com.htx.models.Models._
-import com.htx.services._
-import com.htx.utils._
+// Import required classes
+import com.htx.models.Models.{DataA, DataB}
+import com.htx.services.{Aggregations, AggregationFactory}
+import com.htx.utils.SkewedDataHandler
 
 class ParquetCombinerRDDUnitTest extends AnyFunSuite with BeforeAndAfterAll {
 
@@ -561,7 +560,7 @@ class ParquetCombinerRDDUnitTest extends AnyFunSuite with BeforeAndAfterAll {
     assert(location1Results.nonEmpty, "Should have results for skewed location")
 
     // Check item counts for location 1
-    val itemCounts = location1Results.groupBy(_._2).mapValues(_.size)
+    val itemCounts = location1Results.groupBy(_._2).view.mapValues(_.size).toMap
     assert(
       itemCounts("item1") == 1,
       "item1 should have count 1 after processing"
@@ -670,7 +669,7 @@ class ParquetCombinerRDDUnitTest extends AnyFunSuite with BeforeAndAfterAll {
       Seq(
         (1L, 101L, 1001L, "item1", 1620000000L),
         (1L, 102L, 1002L, "", 1620000001L), // Empty item name
-        (1L, 103L, 1003L, null, 1620000002L), // Null item name
+        (1L, 103L, 1003L, None.orNull, 1620000002L), // Null item name
         (2L, 201L, 2001L, "item2", 1620000003L)
       )
     )
@@ -698,6 +697,6 @@ class ParquetCombinerRDDUnitTest extends AnyFunSuite with BeforeAndAfterAll {
     val itemNames = location1Results.map(_.item_name).toSet
     assert(itemNames.contains("item1"), "Should include 'item1'")
     assert(itemNames.contains(""), "Should include empty string")
-    assert(itemNames.contains(null), "Should include null")
+    assert(itemNames.contains(None.orNull), "Should include null")
   }
 }

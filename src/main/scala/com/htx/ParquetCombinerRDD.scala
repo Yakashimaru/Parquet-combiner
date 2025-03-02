@@ -6,28 +6,34 @@ package com.htx
 
 import org.apache.spark.sql.{SparkSession, Row, SaveMode}
 // Import classes
-import org.apache.spark.sql.types. {StructType, StructField, LongType, StringType}
+import org.apache.spark.sql.types.{
+  StructType,
+  StructField,
+  LongType,
+  StringType
+}
 import org.apache.spark.storage.StorageLevel
 
 // Import classes
 import com.htx.models.Models.{
-  TopItemResult,        
-  ItemCountResult,      
+  TopItemResult,
+  ItemCountResult,
   LocationStatsResult
 }
 
-import com.htx.services.{
-  AggregationFactory,
-  AggregationOperation
-}
+import com.htx.services.{AggregationFactory, AggregationOperation}
 
-import com.htx.utils.DataReader
+import com.htx.utils.{DataReader, Logging}
 
 /** ParquetCombinerRDD - A utility to combine data from two Parquet files,
   * deduplicate detection IDs, and find top items by location. Enhanced to
   * support reusable aggregation operations and handling data skew.
   */
-object ParquetCombinerRDD {
+object ParquetCombinerRDD extends Logging {
+  private val DefaultTopXItems = 5
+  private val sampleNoRows = 3
+  private val defaultNoRows = 10
+
   // Define a trait for aggregation operations to enable reusability
   def main(args: Array[String]): Unit = {
     // Parse command line arguments or use defaults
@@ -38,7 +44,7 @@ object ParquetCombinerRDD {
     val outputPath =
       if (args.length > 2) args(2) else "src/test/resources/test-data/output"
     val topX =
-      if (args.length > 3) args(3).toInt else 5 // Default to top 5 items
+      if (args.length > 3) args(3).toInt else DefaultTopXItems
 
     // Create Spark session for standalone execution
     val spark = SparkSession
@@ -68,22 +74,26 @@ object ParquetCombinerRDD {
   ): Unit = {
 
     try {
-      println("\n===== PARQUET COMBINER =====")
-      println(s"Input A: $dataAPath")
-      println(s"Input B: $dataBPath")
-      println(s"Output: $outputPath")
-      println(s"Top X: $topX")
+      logger.info("\n===== PARQUET COMBINER =====")
+      logger.info(s"Input A: $dataAPath")
+      logger.info(s"Input B: $dataBPath")
+      logger.info(s"Output: $outputPath")
+      logger.info(s"Top X: $topX")
 
       // Read Parquet files into RDDs
       val dataARDD = DataReader.readParquetA(spark, dataAPath)
       val dataBRDD = DataReader.readParquetB(spark, dataBPath)
 
-      // Show sample data
-      println("\nDataA Sample (3 records):")
-      dataARDD.take(3).foreach(println)
+      // Log sample data
+      logger.info("\nDataA Sample (3 records):")
+      dataARDD
+        .take(sampleNoRows)
+        .foreach(record => logger.info(record.toString))
 
-      println("\nDataB Sample (3 records):")
-      dataBRDD.take(3).foreach(println)
+      logger.info("\nDataB Sample (3 records):")
+      dataBRDD
+        .take(sampleNoRows)
+        .foreach(record => logger.info(record.toString))
 
       // Cache the input RDDs for reuse across multiple aggregations
       val cachedDataA = dataARDD.persist(StorageLevel.MEMORY_AND_DISK_SER)
@@ -112,14 +122,20 @@ object ParquetCombinerRDD {
         .aggregate(cachedDataA, cachedDataB, params)
 
       // Show result samples
-      println("\nTop Items Result Sample (10 records):")
-      resultRDD.take(10).foreach(println)
+      logger.info("\nTop Items Result Sample (10 records):")
+      resultRDD
+        .take(defaultNoRows)
+        .foreach(record => logger.info(record.toString))
 
-      println("\nItem Count Result Sample (5 records):")
-      itemCountRDD.take(5).foreach(println)
+      logger.info("\nItem Count Result Sample (5 records):")
+      itemCountRDD
+        .take(defaultNoRows)
+        .foreach(record => logger.info(record.toString))
 
-      println("\nLocation Stats Result Sample (5 records):")
-      locationStatsRDD.take(5).foreach(println)
+      logger.info("\nLocation Stats Result Sample (5 records):")
+      locationStatsRDD
+        .take(defaultNoRows)
+        .foreach(record => logger.info(record.toString))
 
       // Define output schema explicitly for the top items
       val outputSchema = StructType(
@@ -148,13 +164,13 @@ object ParquetCombinerRDD {
       cachedDataA.unpersist()
       cachedDataB.unpersist()
 
-      println(s"\nProcess completed successfully.")
-      println(s"Output written to: $outputPath")
-      println(s"Result contains ${resultRDD.count()} records")
-      println("===== PROCESSING COMPLETE =====\n")
+      logger.info(s"\nProcess completed successfully.")
+      logger.info(s"Output written to: $outputPath")
+      logger.info(s"Result contains ${resultRDD.count()} records")
+      logger.info("===== PROCESSING COMPLETE =====\n")
     } catch {
       case e: Exception =>
-        println(s"ERROR: ${e.getMessage}")
+        logger.error(s"ERROR: ${e.getMessage}")
         e.printStackTrace()
     }
   }

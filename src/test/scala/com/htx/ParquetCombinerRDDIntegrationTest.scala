@@ -4,16 +4,17 @@
 
 package com.htx
 
-import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.sql.{SparkSession, Row, SaveMode}
-import org.apache.spark.sql.types._
+import org.apache.spark.sql.{SparkSession, SaveMode}
+import org.apache.spark.sql.types.{
+  StructType,
+  StructField,
+  LongType,
+  StringType
+}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.BeforeAndAfterAll
-import org.apache.log4j.{Level, Logger}
 import java.io.File
-import java.nio.file.{Files, Path, Paths}
 import scala.reflect.io.Directory
-import scala.collection.JavaConverters._ // For converting Scala collections to Java
 
 class ParquetCombinerRDDIntegrationTest
     extends AnyFunSuite
@@ -37,7 +38,9 @@ class ParquetCombinerRDDIntegrationTest
   }
 
   // Import implicits from the sparkSession object
+  // scalastyle:off underscore.import import.grouping
   import sparkSession.implicits._
+  // scalastyle:on underscore.import import.grouping
 
   override def beforeAll(): Unit = {
     super.beforeAll()
@@ -168,9 +171,6 @@ class ParquetCombinerRDDIntegrationTest
       "Output schema should match expected schema"
     )
 
-    // Verify data content
-    val outputRows = outputDF.collect()
-
     // We should have 3 locations x 3 items = 9 rows (adjusted for duplicates and actual counts)
     // Spot check some expected values
 
@@ -204,7 +204,7 @@ class ParquetCombinerRDDIntegrationTest
     outputDF.createOrReplaceTempView("output")
     val rankingCheck = spark
       .sql("""
-      SELECT geographical_location, COUNT(DISTINCT item_rank) as unique_ranks, 
+      SELECT geographical_location, COUNT(DISTINCT item_rank) as unique_ranks,
              MIN(item_rank) as min_rank, MAX(item_rank) as max_rank
       FROM output
       GROUP BY geographical_location

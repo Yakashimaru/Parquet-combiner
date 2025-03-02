@@ -1,29 +1,71 @@
+// HTX Data Engineering Assessment
+// Created by: Joel John Tan
+// Date: March 2025
+
 package tools
 
 import org.apache.spark.sql.{SparkSession, DataFrame}
 import java.io.File
+import com.htx.utils.Logging
 
-object ReadParquet {
+object ReadParquet extends Logging {
+  private val defaultNoRows = 20
+  private val maxNoRows = 100
   def main(args: Array[String]): Unit = {
-
     if (args.isEmpty) {
-      println("Usage: ReadParquet <file> [limit] [path]")
-      println("  file: 'dataA', 'dataB', 'output', or a custom filename")
-      println("  limit: Number of rows to display (default: 20)")
-      println(
-        "  path: Custom directory path (default: src/test/resources/test-data/)"
-      )
-      return
-    }
+      printUsage()
+    } else {
+      // Parse arguments
+      val (filename, limit, customPath) = parseCommandLineArgs(args)
 
-    // Parse arguments
+      // Determine full path
+      val fullPath = determineFullPath(filename, customPath)
+      logger.info(s"Reading parquet file from: $fullPath")
+
+      // Initialize Spark session
+      val spark = initializeSparkSession()
+
+      try {
+        processParquetFile(spark, fullPath, limit)
+      } catch {
+        case e: Exception =>
+          logger.info(s"Error reading parquet file: ${e.getMessage}")
+          e.printStackTrace()
+      } finally {
+        spark.stop()
+      }
+    }
+  }
+
+  private def printUsage(): Unit = {
+    logger.info("Usage: ReadParquet <file> [limit] [path]")
+    logger.info("  file: 'dataA', 'dataB', 'output', or a custom filename")
+    logger.info("  limit: Number of rows to display (default: 20)")
+    logger.info(
+      "  path: Custom directory path (default: src/test/resources/test-data/)"
+    )
+  }
+
+  private def parseCommandLineArgs(
+      args: Array[String]
+  ): (String, Int, Option[String]) = {
     val filename = args(0)
     val limit =
-      if (args.length > 1 && args(1).matches("\\d+")) args(1).toInt else 20
+      if (args.length > 1 && args(1).matches("\\d+")) {
+        args(1).toInt
+      } else {
+        defaultNoRows
+      }
     val customPath = if (args.length > 2) Some(args(2)) else None
 
-    // Determine full path
-    val fullPath = if (filename.contains("/") || filename.contains("\\")) {
+    (filename, limit, customPath)
+  }
+
+  private def determineFullPath(
+      filename: String,
+      customPath: Option[String]
+  ): String = {
+    if (filename.contains("/") || filename.contains("\\")) {
       // User provided a full path
       filename
     } else {
@@ -31,59 +73,62 @@ object ReadParquet {
       val basePath = customPath.getOrElse("src/test/resources/test-data")
       s"$basePath/$filename"
     }
+  }
 
-    println(s"Reading parquet file from: $fullPath")
-
-    // Initialize Spark session
-    val spark = SparkSession.builder
+  private def initializeSparkSession(): SparkSession = {
+    SparkSession
+      .builder()
       .appName("Parquet Reader")
       .master("local[*]")
       .getOrCreate()
+  }
 
-    try {
-      // Check if file exists
-      val file = new File(fullPath)
-      if (!file.exists()) {
-        println(s"Error: File or directory not found at $fullPath")
-        return
-      }
-
+  private def processParquetFile(
+      spark: SparkSession,
+      fullPath: String,
+      limit: Int
+  ): Unit = {
+    // Check if file exists
+    val file = new File(fullPath)
+    if (!file.exists()) {
+      logger.info(s"Error: File or directory not found at $fullPath")
+    } else {
       // Read the Parquet file
       val readParquet = spark.read.parquet(fullPath)
 
-      // Basic information
-      println("\n=== BASIC INFORMATION ===")
-      println(s"Number of rows: ${readParquet.count()}")
-      println(s"Number of columns: ${readParquet.columns.length}")
+      // Display basic information
+      displayBasicInfo(readParquet, limit)
 
-      // Schema
-      println("\n=== SCHEMA ===")
-      readParquet.printSchema()
-
-      // Data preview
-      println(
-        s"\n=== DATA PREVIEW (${Math.min(limit, readParquet.count().toInt)} rows) ==="
-      )
-      readParquet.show(limit, truncate = false)
-
-      // Determine file type automatically by examining schema
+      // Determine file type and perform analysis
       val fileType = determineFileType(readParquet)
+      analyzeByFileType(readParquet, fileType)
+    }
+  }
 
-      // Data statistics based on the dataset type
-      fileType match {
-        case "dataA"  => analyzeDataA(readParquet)
-        case "dataB"  => analyzeDataB(readParquet)
-        case "output" => analyzeOutput(readParquet)
-        case _ =>
-          println("\nNo specific analysis available for this file type.")
-      }
+  private def displayBasicInfo(df: DataFrame, limit: Int): Unit = {
+    // Basic information
+    logger.info("\n=== BASIC INFORMATION ===")
+    logger.info(s"Number of rows: ${df.count()}")
+    logger.info(s"Number of columns: ${df.columns.length}")
 
-    } catch {
-      case e: Exception =>
-        println(s"Error reading parquet file: ${e.getMessage}")
-        e.printStackTrace()
-    } finally {
-      spark.stop()
+    // Schema
+    logger.info("\n=== SCHEMA ===")
+    df.printSchema()
+
+    // Data preview
+    logger.info(
+      s"\n=== DATA PREVIEW (${Math.min(limit, df.count().toInt)} rows) ==="
+    )
+    df.show(limit, truncate = false)
+  }
+
+  private def analyzeByFileType(df: DataFrame, fileType: String): Unit = {
+    fileType match {
+      case "dataA"  => analyzeDataA(df)
+      case "dataB"  => analyzeDataB(df)
+      case "output" => analyzeOutput(df)
+      case _ =>
+        logger.info("\nNo specific analysis available for this file type.")
     }
   }
 
@@ -116,10 +161,10 @@ object ReadParquet {
   }
 
   def analyzeDataA(df: DataFrame): Unit = {
-    println("\n=== DATA A STATISTICS ===")
+    logger.info("\n=== DATA A STATISTICS ===")
 
     // Summary statistics for numeric columns
-    println("Summary statistics:")
+    logger.info("Summary statistics:")
     df.describe(
       "geographical_location_oid",
       "video_camera_oid",
@@ -128,43 +173,43 @@ object ReadParquet {
     ).show()
 
     // Distribution of data by location
-    println("Data distribution by geographical location:")
+    logger.info("Data distribution by geographical location:")
     df.groupBy("geographical_location_oid")
       .count()
       .orderBy("geographical_location_oid")
       .show()
 
     // Most common items
-    println("Most common detected items:")
+    logger.info("Most common detected items:")
     val itemCounts = df.groupBy("item_name").count()
-    itemCounts.orderBy(itemCounts.col("count").desc).show(10)
+    itemCounts.orderBy(itemCounts.col("count").desc).show(defaultNoRows)
 
     // Duplicate detection_oid count
     val totalRows = df.count()
     val distinctDetections = df.select("detection_oid").distinct().count()
-    println(s"Total detection records: $totalRows")
-    println(s"Distinct detection_oid count: $distinctDetections")
-    println(
+    logger.info(s"Total detection records: $totalRows")
+    logger.info(s"Distinct detection_oid count: $distinctDetections")
+    logger.info(
       s"Duplicate detection rate: ${(totalRows - distinctDetections) * 100.0 / totalRows}%"
     )
   }
 
   def analyzeDataB(df: DataFrame): Unit = {
-    println("\n=== DATA B STATISTICS ===")
+    logger.info("\n=== DATA B STATISTICS ===")
 
     // Show all locations
-    println("All geographical locations:")
+    logger.info("All geographical locations:")
     df.select("geographical_location_oid", "geographical_location")
       .orderBy("geographical_location_oid")
-      .show(100, truncate = false)
+      .show(maxNoRows, truncate = false)
   }
 
   def analyzeOutput(df: DataFrame): Unit = {
-    println("\n=== OUTPUT STATISTICS ===")
+    logger.info("\n=== OUTPUT STATISTICS ===")
 
     // Show top items by location
-    println("Top items by geographical location:")
+    logger.info("Top items by geographical location:")
     df.orderBy("geographical_location", "item_rank")
-      .show(100, truncate = false)
+      .show(maxNoRows, truncate = false)
   }
 }

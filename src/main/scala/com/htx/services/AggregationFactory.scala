@@ -4,20 +4,18 @@
 
 package com.htx.services
 
-import com.htx.models.Models.{
-  ResultBase, 
-}
+import com.htx.models.Models.{ResultBase}
 import com.htx.services.Aggregations.{
-  TopItemsAggregation, 
-  ItemCountAggregation, 
+  TopItemsAggregation,
+  ItemCountAggregation,
   LocationStatsAggregation
 }
 
 /** Factory for creating aggregation operations.
   *
   * This factory implements the Factory Method design pattern, which:
-  *   1. Decouples client code from concrete aggregation implementations 
-  *   2. Centralizes instantiation logic in one place 3. Makes it easy to add
+  *   1. Decouples client code from concrete aggregation implementations 2.
+  *      Centralizes instantiation logic in one place 3. Makes it easy to add
   *      new aggregation types without modifying client code
   *
   * The design enables runtime selection of different aggregation strategies

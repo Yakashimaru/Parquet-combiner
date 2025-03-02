@@ -5,7 +5,6 @@ val sparkVersion = "3.5.4"
 
 // Define custom run tasks for different logging levels
 lazy val quietRun = taskKey[Unit]("Runs the application with minimal logging")
-lazy val normalRun = taskKey[Unit]("Runs the application with normal logging")
 
 lazy val root = project
   .in(file("."))
@@ -17,6 +16,7 @@ lazy val root = project
 
     // For java 17 compatibility
     fork := true,
+    outputStrategy := Some(StdoutOutput),
     javaOptions ++= Seq(
       "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
       "--add-opens=java.base/java.nio=ALL-UNNAMED"
@@ -28,7 +28,9 @@ lazy val root = project
       "org.apache.spark" %% "spark-sql" % sparkVersion,
       "com.github.mjakubowski84" %% "parquet4s-core" % "2.8.0",
       "org.apache.parquet" % "parquet-hadoop" % "1.12.3",
-      "org.apache.hadoop" % "hadoop-client" % "3.3.4" % "provided"
+      "org.apache.hadoop" % "hadoop-client" % "3.3.4" % "provided",
+      "org.slf4j" % "slf4j-api" % "1.7.36",
+      "org.slf4j" % "slf4j-log4j12" % "1.7.36"
     ),
 
     // Testing dependencies - updating to include ScalaTest for unit and integration tests
@@ -40,10 +42,6 @@ lazy val root = project
     // Custom run tasks for different logging levels
     quietRun := {
       (Compile / run).toTask(" -Dlog4j.configuration=log4j-quiet.properties").value
-    },
-    
-    normalRun := {
-      (Compile / run).toTask(" -Dlog4j.configuration=log4j-normal.properties").value
     },
     
     // Ensure log4j configuration files are included in resources
@@ -60,7 +58,7 @@ lazy val root = project
     scalastyleConfig := baseDirectory.value / "scalastyle-config.xml",
     
     // Main class for assembly
-    Compile / mainClass := Some("ParquetCombinerRDD"),
+    Compile / mainClass := Some("com.htx.ParquetCombinerRDD"),
     
     // Assembly merge strategy for creating a fat JAR
     assembly / assemblyMergeStrategy := {

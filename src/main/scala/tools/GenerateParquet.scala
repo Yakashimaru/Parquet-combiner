@@ -8,12 +8,16 @@ import org.apache.spark.sql.{SparkSession, SaveMode}
 import org.apache.spark.sql.functions.desc
 import java.time.Instant
 import scala.util.Try
+import com.htx.utils.Logging
 
 /** Tool for generating test data for the item detection analysis project. This
   * utility generates test data that mimics production data for testing
   * purposes.
   */
-object GenerateParquet {
+object GenerateParquet extends Logging {
+  private val sampleNoRows = 5
+  private val defaultNoRows = 20
+
   // Default configuration values
   private val DEFAULT_OUTPUT_DIR = "src/test/resources/test-data"
   private val DEFAULT_DATA_A_ROWS = 1000
@@ -24,10 +28,15 @@ object GenerateParquet {
   private val DEFAULT_SKEW_FACTOR =
     5.0 // How much more data the skewed location will have
 
+  private val RANDOM_SEED = 42
+  private val CAMERAS_PER_LOCATION = 10
+  private val TIMESTAMP_VARIATION = 10
+  private val DEFAULT_NUM_ITEMS = 10
+
   def main(args: Array[String]): Unit = {
     // Parse command line arguments
     val config = parseArgs(args)
-    println(s"Generating with configuration: $config")
+    logger.info(s"Generating with configuration: $config")
 
     // Initialize Spark Session
     val spark = SparkSession
@@ -36,8 +45,9 @@ object GenerateParquet {
       .master(config.sparkMaster)
       .getOrCreate()
 
+    // scalastyle:off underscore.import import.grouping
     import spark.implicits._
-
+    // scalastyle:on underscore.import import.grouping
     try {
       // Generate DataB (Geographical Locations)
       val locationData = generateLocationData(config.dataBRows)
@@ -78,34 +88,38 @@ object GenerateParquet {
         .parquet(dataBPath)
 
       // Display statistics and samples
-      println(s"Generated ${config.dataARows} records for DataA at $dataAPath")
-      println(s"Generated ${config.dataBRows} records for DataB at $dataBPath")
+      logger.info(
+        s"Generated ${config.dataARows} records for DataA at $dataAPath"
+      )
+      logger.info(
+        s"Generated ${config.dataBRows} records for DataB at $dataBPath"
+      )
 
       // Show sample data
-      println("\nDataA Sample:")
-      dataADF.show(5)
+      logger.info("\nDataA Sample:")
+      dataADF.show(sampleNoRows)
 
-      println("DataB Sample:")
-      dataBDF.show(5)
+      logger.info("DataB Sample:")
+      dataBDF.show(sampleNoRows)
 
       // Display data distribution statistics
-      println("\nData Distribution by Location:")
+      logger.info("\nData Distribution by Location:")
       dataADF
         .groupBy("geographical_location_oid")
         .count()
         .join(dataBDF, "geographical_location_oid")
         .select("geographical_location_oid", "geographical_location", "count")
         .orderBy(desc("count"))
-        .show(20)
+        .show(defaultNoRows)
 
       // Count distinct detection_oids to show duplicates
       val totalRows = dataADF.count()
       val distinctDetections =
         dataADF.select("detection_oid").distinct().count()
-      println(
+      logger.info(
         s"\nTotal rows: $totalRows, Distinct detection_oids: $distinctDetections"
       )
-      println(
+      logger.info(
         s"Duplication rate: ${(totalRows - distinctDetections) * 100.0 / totalRows}%"
       )
 
@@ -161,7 +175,7 @@ object GenerateParquet {
       skewFactor: Double,
       numItems: Int
   ): Seq[(Long, Long, Long, String, Long)] = {
-    val random = new scala.util.Random(42) // For reproducibility
+    val random = new scala.util.Random(RANDOM_SEED) // For reproducibility
     val currentTime = Instant.now().getEpochSecond
 
     // Define possible items that might be detected (expand based on numItems parameter)
@@ -220,22 +234,23 @@ object GenerateParquet {
     val baseRecords = (1 to numUniqueRecords).map { i =>
       // Apply skew for the specified location
       val locationProb = random.nextDouble()
-      val locationOid =
+      val locationOid = {
         if (locationProb < 0.7 * skewFactor / (1 + skewFactor)) {
           skewLocationId
-        } else
-          {
-            val nonSkewedLoc = random.nextInt(numLocations) + 1
-            if (nonSkewedLoc == skewLocationId) {
-              (nonSkewedLoc % numLocations) + 1
-            } else {
-              nonSkewedLoc
-            }
-          }.toLong
+        } else {
+          val nonSkewedLoc = random.nextInt(numLocations) + 1
+          if (nonSkewedLoc == skewLocationId) {
+            (nonSkewedLoc % numLocations) + 1
+          } else {
+            nonSkewedLoc
+          }
+        }
+      }.toLong
+
 
       val cameraOid =
-        (locationOid * 10) + random.nextInt(
-          10
+        (locationOid * CAMERAS_PER_LOCATION) + random.nextInt(
+          CAMERAS_PER_LOCATION
         ) + 1 // Cameras are grouped by location
       val detectionOid = i.toLong
       val itemName = items(random.nextInt(items.length))
@@ -254,7 +269,9 @@ object GenerateParquet {
         sourceRecord._2,
         sourceRecord._3, // Same detection_oid
         sourceRecord._4, // Same item
-        sourceRecord._5 + random.nextInt(10) // Slightly different timestamp
+        sourceRecord._5 + random.nextInt(
+          TIMESTAMP_VARIATION
+        ) // Slightly different timestamp
       )
     }
 
@@ -270,7 +287,7 @@ object GenerateParquet {
       duplicationRate: Double = DEFAULT_DUPLICATION_RATE,
       skewLocationId: Long = DEFAULT_SKEW_LOCATION,
       skewFactor: Double = DEFAULT_SKEW_FACTOR,
-      numItems: Int = 10,
+      numItems: Int = DEFAULT_NUM_ITEMS,
       sparkMaster: String = "local[*]"
   )
 
@@ -288,64 +305,70 @@ object GenerateParquet {
     * --spark-master URL : Spark master URL
     */
   private def parseArgs(args: Array[String]): Config = {
-    def nextArg(args: List[String], config: Config): Config = {
-      args match {
-        case Nil => config
-        case "--output-dir" :: dir :: rest =>
-          nextArg(rest, config.copy(outputDir = dir))
-        case "--data-a-rows" :: n :: rest =>
-          nextArg(
-            rest,
-            config.copy(dataARows = Try(n.toInt).getOrElse(DEFAULT_DATA_A_ROWS))
-          )
-        case "--data-b-rows" :: n :: rest =>
-          nextArg(
-            rest,
-            config.copy(dataBRows = Try(n.toInt).getOrElse(DEFAULT_DATA_B_ROWS))
-          )
-        case "--duplication-rate" :: r :: rest =>
-          nextArg(
-            rest,
-            config.copy(duplicationRate =
-              Try(r.toDouble).getOrElse(DEFAULT_DUPLICATION_RATE)
-            )
-          )
-        case "--skew-location" :: id :: rest =>
-          nextArg(
-            rest,
-            config.copy(skewLocationId =
-              Try(id.toLong).getOrElse(DEFAULT_SKEW_LOCATION)
-            )
-          )
-        case "--skew-factor" :: f :: rest =>
-          nextArg(
-            rest,
-            config.copy(skewFactor =
-              Try(f.toDouble).getOrElse(DEFAULT_SKEW_FACTOR)
-            )
-          )
-        case "--num-items" :: n :: rest =>
-          nextArg(rest, config.copy(numItems = Try(n.toInt).getOrElse(10)))
-        case "--spark-master" :: url :: rest =>
-          nextArg(rest, config.copy(sparkMaster = url))
-        case unknown :: rest =>
-          println(s"Unknown option: $unknown")
-          nextArg(rest, config)
-      }
-    }
-
+    // Check for help flag first
     if (args.contains("--help")) {
       printHelp()
       System.exit(0)
     }
 
-    nextArg(args.toList, Config())
+    // Process arguments recursively
+    processArgList(args.toList, Config())
+  }
+
+  // Separate function to process a single argument pair
+  private def processArgPair(
+      option: String,
+      value: String,
+      config: Config
+  ): Config = {
+    option match {
+      case "--output-dir" =>
+        config.copy(outputDir = value)
+      case "--data-a-rows" =>
+        config.copy(dataARows = Try(value.toInt).getOrElse(DEFAULT_DATA_A_ROWS))
+      case "--data-b-rows" =>
+        config.copy(dataBRows = Try(value.toInt).getOrElse(DEFAULT_DATA_B_ROWS))
+      case "--duplication-rate" =>
+        config.copy(duplicationRate =
+          Try(value.toDouble).getOrElse(DEFAULT_DUPLICATION_RATE)
+        )
+      case "--skew-location" =>
+        config.copy(skewLocationId =
+          Try(value.toLong).getOrElse(DEFAULT_SKEW_LOCATION)
+        )
+      case "--skew-factor" =>
+        config.copy(skewFactor =
+          Try(value.toDouble).getOrElse(DEFAULT_SKEW_FACTOR)
+        )
+      case "--num-items" =>
+        config.copy(numItems = Try(value.toInt).getOrElse(DEFAULT_NUM_ITEMS))
+      case "--spark-master" =>
+        config.copy(sparkMaster = value)
+      case _ =>
+        logger.info(s"Unknown option: $option")
+        config
+    }
+  }
+
+  // Process the list of arguments recursively
+  private def processArgList(args: List[String], config: Config): Config = {
+    args match {
+      case Nil =>
+        config
+      case option :: value :: rest if option.startsWith("--") =>
+        // Process this option-value pair and continue with the rest
+        val updatedConfig = processArgPair(option, value, config)
+        processArgList(rest, updatedConfig)
+      case unknown :: rest =>
+        logger.info(s"Unknown argument format: $unknown")
+        processArgList(rest, config)
+    }
   }
 
   /** Print usage help message
     */
   private def printHelp(): Unit = {
-    println(
+    logger.info(
       """Usage: GenerateParquet [options]
         |
         |Options:

@@ -6,10 +6,10 @@ package com.htx.services
 
 import org.apache.spark.rdd.RDD
 import com.htx.models.Models.{
-  DataA, 
-  DataB, 
-  TopItemResult, 
-  ItemCountResult, 
+  DataA,
+  DataB,
+  TopItemResult,
+  ItemCountResult,
   LocationStatsResult
 }
 
