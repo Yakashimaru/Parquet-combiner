@@ -4,8 +4,6 @@
 
 package com.htx.models
 
-import org.apache.spark.rdd.RDD
-
 /** Data models for the application */
 object Models {
   // Case classes for the input data structures
@@ -27,9 +25,12 @@ object Models {
 
   // Base trait for all result types to enable reusability
   // All result types inherit from this base trait, ensuring they all have a geographical_location_oid.
+  // Snake case used to match database column names
+  // scalastyle:off method.name
   sealed trait ResultBase extends Serializable {
     def geographical_location_oid: Long
   }
+  // scalastyle:on method.name
 
   // Case class for the main output data structure
   @SerialVersionUID(1L)

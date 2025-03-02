@@ -1,3 +1,7 @@
+// HTX Data Engineering Assessment
+// Created by: Joel John Tan
+// Date: March 2025
+
 package com.htx
 
 import org.apache.spark.{SparkConf, SparkContext}
@@ -20,9 +24,6 @@ class ParquetCombinerRDDUnitTest extends AnyFunSuite with BeforeAndAfterAll {
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    // Silence logging for cleaner test output
-    Logger.getRootLogger.setLevel(Level.ERROR)
-
     // Create test Spark context and session
     val conf = new SparkConf()
       .setAppName("ParquetCombinerRDDUnitTest")

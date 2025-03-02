@@ -4,8 +4,14 @@
 
 package com.htx.services
 
-import com.htx.models.Models._
-import com.htx.services.Aggregations._
+import com.htx.models.Models.{
+  ResultBase, 
+}
+import com.htx.services.Aggregations.{
+  TopItemsAggregation, 
+  ItemCountAggregation, 
+  LocationStatsAggregation
+}
 
 /** Factory for creating aggregation operations.
   *

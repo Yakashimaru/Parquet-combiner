@@ -1,18 +1,27 @@
-/*
- * My Scala project for HTX Data Engineer Test.
- * This file contains the main application logic for combining Parquet files.
- */
+// HTX Data Engineering Assessment
+// Created by: Joel John Tan
+// Date: March 2025
+
 package com.htx
 
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, Row, SaveMode}
-import org.apache.spark.sql.types._
+// Import classes
+import org.apache.spark.sql.types. {StructType, StructField, LongType, StringType}
 import org.apache.spark.storage.StorageLevel
 
 // Import classes
-import com.htx.models.Models._
-import com.htx.services._
-import com.htx.utils._
+import com.htx.models.Models.{
+  TopItemResult,        
+  ItemCountResult,      
+  LocationStatsResult
+}
+
+import com.htx.services.{
+  AggregationFactory,
+  AggregationOperation
+}
+
+import com.htx.utils.DataReader
 
 /** ParquetCombinerRDD - A utility to combine data from two Parquet files,
   * deduplicate detection IDs, and find top items by location. Enhanced to

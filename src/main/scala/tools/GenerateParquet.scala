@@ -1,9 +1,11 @@
+// HTX Data Engineering Assessment
+// Created by: Joel John Tan
+// Date: March 2025
+
 package tools
 
 import org.apache.spark.sql.{SparkSession, SaveMode}
-import org.apache.spark.sql.types._
-import org.apache.spark.sql.functions._
-import java.sql.Timestamp
+import org.apache.spark.sql.functions.desc
 import java.time.Instant
 import scala.util.Try
 
@@ -37,24 +39,6 @@ object GenerateParquet {
     import spark.implicits._
 
     try {
-      // Define schemas
-      val dataASchema = StructType(
-        Seq(
-          StructField("geographical_location_oid", LongType, nullable = false),
-          StructField("video_camera_oid", LongType, nullable = false),
-          StructField("detection_oid", LongType, nullable = false),
-          StructField("item_name", StringType, nullable = false),
-          StructField("timestamp_detected", LongType, nullable = false)
-        )
-      )
-
-      val dataBSchema = StructType(
-        Seq(
-          StructField("geographical_location_oid", LongType, nullable = false),
-          StructField("geographical_location", StringType, nullable = false)
-        )
-      )
-
       // Generate DataB (Geographical Locations)
       val locationData = generateLocationData(config.dataBRows)
       val locationRDD = spark.sparkContext.parallelize(locationData)

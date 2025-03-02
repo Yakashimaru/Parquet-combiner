@@ -6,7 +6,7 @@ package com.htx.utils
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
-import com.htx.models.Models._
+import com.htx.models.Models.{DataA, DataB}
 
 /** Utility for reading data from Parquet files */
 object DataReader {

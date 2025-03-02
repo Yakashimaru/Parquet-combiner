@@ -5,7 +5,13 @@
 package com.htx.services
 
 import org.apache.spark.rdd.RDD
-import com.htx.models.Models._
+import com.htx.models.Models.{
+  DataA, 
+  DataB, 
+  TopItemResult, 
+  ItemCountResult, 
+  LocationStatsResult
+}
 
 /** Implementations of different aggregation strategies.
   *
@@ -20,6 +26,8 @@ import com.htx.models.Models._
   */
 
 object Aggregations {
+  private val DefaultTopItems = 5
+
   // Implementation of the top items aggregation
   class TopItemsAggregation extends AggregationOperation[TopItemResult] {
     override def aggregate(
@@ -27,7 +35,7 @@ object Aggregations {
         dataB: RDD[DataB],
         params: Map[String, Any]
     ): RDD[TopItemResult] = {
-      val topX = params.getOrElse("topX", 5).asInstanceOf[Int]
+      val topX = params.getOrElse("topX", DefaultTopItems).asInstanceOf[Int]
 
       // Deduplicate detection_oid values while preserving location_oid and item_name
       val deduplicatedDetections = dataA
@@ -113,7 +121,7 @@ object Aggregations {
         .map { case (locationOid, items) =>
           // Count unique items and most active camera
           val uniqueItems = items.map(_._1).toSet.size
-          val cameraToCount = items.groupBy(_._2).mapValues(_.size)
+          val cameraToCount = items.groupBy(_._2).view.mapValues(_.size).toMap
           val mostActiveCamera =
             if (cameraToCount.isEmpty) -1L else cameraToCount.maxBy(_._2)._1
 

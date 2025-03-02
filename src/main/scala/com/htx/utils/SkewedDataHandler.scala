@@ -5,7 +5,7 @@
 package com.htx.utils
 
 import org.apache.spark.rdd.RDD
-import com.htx.models.Models._
+import com.htx.models.Models.DataA
 
 /** Handler for skewed data processing */
 object SkewedDataHandler {

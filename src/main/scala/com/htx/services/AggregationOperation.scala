@@ -5,7 +5,7 @@
 package com.htx.services
 
 import org.apache.spark.rdd.RDD
-import com.htx.models.Models._
+import com.htx.models.Models.{DataA, DataB, ResultBase}
 
 /** Base trait for all aggregation operations.
   *
