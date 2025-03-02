@@ -1,7 +1,10 @@
 import sbt.Keys._
 
-val scala2Version = "2.13.16"
+val scala2Version = "2.12.18"
 val sparkVersion = "3.5.4"
+
+// Define custom run tasks for different logging levels
+lazy val quietRun = taskKey[Unit]("Runs the application with minimal logging")
 
 lazy val root = project
   .in(file("."))
@@ -13,21 +16,11 @@ lazy val root = project
 
     // For java 17 compatibility
     fork := true,
+    outputStrategy := Some(StdoutOutput),
     javaOptions ++= Seq(
       "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
       "--add-opens=java.base/java.nio=ALL-UNNAMED"
     ),
-    
-    // Control SBT logging more aggressively
-    logLevel := Level.Error,
-    showSuccess := false,
-    suppressSbtShellNotification := true,
-    
-    // Redirect Spark output
-    outputStrategy := Some(StdoutOutput),
-    
-    // Disable all extra output
-    traceLevel := -1,
 
     // Spark dependencies
     libraryDependencies ++= Seq(
@@ -35,30 +28,37 @@ lazy val root = project
       "org.apache.spark" %% "spark-sql" % sparkVersion,
       "com.github.mjakubowski84" %% "parquet4s-core" % "2.8.0",
       "org.apache.parquet" % "parquet-hadoop" % "1.12.3",
-      "org.apache.hadoop" % "hadoop-client" % "3.3.4" % "provided"
+      "org.apache.hadoop" % "hadoop-client" % "3.3.4" % "provided",
+      "org.slf4j" % "slf4j-api" % "1.7.36",
+      "org.slf4j" % "slf4j-log4j12" % "1.7.36"
     ),
 
     // Testing dependencies - updating to include ScalaTest for unit and integration tests
     libraryDependencies ++= Seq(
-      "org.scalameta" %% "munit" % "1.0.0" % Test,
       "org.scalatest" %% "scalatest" % "3.2.15" % Test,
       "org.mockito" % "mockito-core" % "4.11.0" % Test
     ),
 
-    // Custom task to run with minimal logging
-    commands += Command.command("runQuiet") { state =>
-      "set outputStrategy := Some(StdoutOutput)" ::
-      "set logLevel := Level.Error" ::
-      "set traceLevel := -1" ::
-      "runMain ParquetCombinerRDD" ::
-      state
+    // Custom run tasks for different logging levels
+    quietRun := {
+      (Compile / run).toTask(" -Dlog4j.configuration=log4j-quiet.properties").value
     },
     
+    // Ensure log4j configuration files are included in resources
+    Compile / unmanagedResources / includeFilter := "*.properties",
+
+    // Custom command to run with minimal logging 
+    commands += Command.single("quietRunMain") { (state, mainClass) =>
+      s"""set javaOptions += "-Dlog4j.configuration=log4j-quiet.properties"""" ::
+      s"runMain $mainClass" ::
+      state
+    },
+      
     // ScalaStyle configuration
     scalastyleConfig := baseDirectory.value / "scalastyle-config.xml",
     
     // Main class for assembly
-    Compile / mainClass := Some("ParquetCombinerRDD"),
+    Compile / mainClass := Some("com.htx.ParquetCombinerRDD"),
     
     // Assembly merge strategy for creating a fat JAR
     assembly / assemblyMergeStrategy := {
@@ -73,11 +73,9 @@ lazy val root = project
       "-feature",
       "-unchecked",
       "-Xlint",
-      "-Wdead-code",
-      "-Wunused:imports"
     ),
     
-    // Ensure tests run in sequence (helpful for Spark tests)
+    // Ensure tests run in sequence 
     Test / parallelExecution := false,
 
     // Add the ScalaStyle plugin settings

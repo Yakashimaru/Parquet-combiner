@@ -1,0 +1,113 @@
+DESIGN CONSIDERATIONS
+=====================
+
+This design focuses on optimizing the Spark job for performance, scalability, and maintainability. Key goals are to:
+- Minimize shuffle operations to reduce computation time.
+- Ensure memory is managed efficiently through caching.
+- Optimize for large datasets (around 1 million rows).
+- Keep the code modular and reusable.
+
+DESIGN PATTERNS
+--------------
+
+Factory and Strategy Patterns:
+The Factory and Strategy patterns are used to make the code more flexible and maintainable:
+
+1. AggregationOperation (Strategy Pattern):
+   - Provides a common interface for different aggregation algorithms.
+   - Helps keep the code type-safe and extendable for future aggregation types.
+   - All aggregations are grouped by geographical_location_oid
+
+2. AggregationFactory (Factory Pattern):
+   - Centralizes creation logic for all aggregation operations
+   - Makes it easy to add new aggregation types without changing client code
+
+3. Benefits for extensibility:
+   - New aggregation columns can be added by creating a new AggregationOperation implementation
+   - To add a new aggregation type (e.g., "timeBasedStats"):
+     a. Create a new implementation class extending AggregationOperation
+     b. Add it to the AggregationFactory match case
+     c. Client code remains unchanged
+   - Common code patterns for deduplication and geographic grouping are reused
+
+SHUFFLE OPTIMIZATION
+-------------------
+
+1. reduceByKey over groupByKey:
+   - reduceByKey is more efficient than groupByKey as it reduces data shuffling
+   - Example: itemCounts.reduceByKey(_ + _) avoids creating a large shuffle stage
+
+2. Custom Join Implementation:
+   - Instead of using .join(), which can be costly, I implemented a custom join 
+     using map and reduceByKey, which is more efficient for this use case.
+   - For smaller datasets (e.g., DataB), I use broadcast variables to avoid shuffling.
+
+3. Early Deduplication:
+   - I deduplicate detection_oid as soon as possible, 
+     which reduces the amount of data in subsequent transformations.
+
+MEMORY MANAGEMENT
+----------------
+
+1. Caching Strategy:
+   - I used persist() with the MEMORY_AND_DISK_SER level to store intermediate results, 
+     as they are reused and explicitly unpersisted them after use to free up memory.
+
+
+2. Projection Pushdown:
+   - I only select the fields I need early on in the transformation chain to 
+     minimize the size of intermediate RDDs
+
+DATA SKEW HANDLING
+-----------------
+
+1. Salting Technique:
+   - Created a snippet, SkewedDataHandler for handling data skew in geographical locations
+   - Adds a salt value based on detection_oid to distribute skewed data
+
+2. Benefits:
+   - Distributes work more evenly across executors
+
+SPARK CONFIGURATIONS
+------------------
+
+1. Parallelism Settings:
+   - Set spark.sql.shuffle.partitions and spark.default.parallelism to 200,
+     which is a reasonable setting for a medium-sized cluster.
+
+2. RDD Compression:
+   - I enabled RDD compression (spark.rdd.compress: true) to reduce memory 
+     usage and network traffic.
+
+3. Serialization:
+   - I used JavaSerializer for compatibility with complex case classes, 
+     as it’s more flexible.
+
+ALGORITHM COMPLEXITY
+------------------
+
+Time Complexity:
+- Reading input: O(n) where n is the number of records
+- Deduplication: O(n) using hash-based reduceByKey
+- Aggregation and ranking: O(n log k) where k is topX parameter
+- Overall: O(n log k) dominated by sorting operations for ranking
+
+Space Complexity:
+- Input data: O(n)
+- Intermediate RDDs: O(n) with reduction after deduplication
+- Result data: O(l * k) where l is number of locations and k is topX parameter
+- Overall: O(n) dominated by input data size
+
+PERFORMANCE CONSIDERATIONS
+------------------------
+
+1. Partitioning:
+   - Partitioning data based on geographical_location_oid helps ensure better data locality.
+
+2. Broadcast Join:
+   - I used broadcast joins for the smaller DataB dataset to
+     minimize network traffic and avoid shuffling.
+
+3. Balance Between Memory and CPU:
+   - To handle memory constraints, I used serialized storage for RDDs, 
+     which reduces memory usage at the cost of some CPU overhead.

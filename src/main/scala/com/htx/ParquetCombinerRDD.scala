@@ -1,254 +1,213 @@
+// HTX Data Engineering Assessment
+// Created by: Joel John Tan
+// Date: March 2025
+
 package com.htx
 
-import org.apache.spark.rdd.RDD
-import org.apache.hadoop.conf.Configuration
-import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.{SparkSession, Row, SaveMode}
-import org.apache.spark.sql.types._
+import org.apache.spark.sql.types.{
+  StructType,
+  StructField,
+  LongType,
+  StringType
+}
 import org.apache.spark.storage.StorageLevel
-import scala.collection.Map
+import com.htx.models.Models.{
+  TopItemResult,
+  ItemCountResult,
+  LocationStatsResult,
+  DataA,
+  DataB
+}
+import com.htx.services.{AggregationFactory, AggregationOperation}
+import com.htx.utils.{DataReader, Logging}
+import org.apache.spark.rdd.RDD
 
-/**
- * ParquetCombinerRDD - A utility to combine data from two Parquet files,
- * deduplicate detection IDs, and find top items by location.
- */
-object ParquetCombinerRDD {
-  
-  // Case classes for the input data structures
-  case class DataA(
-    geographical_location_oid: Long, //bigint
-    video_camera_oid: Long, //bigint
-    detection_oid: Long, //bigint
-    item_name: String, //varchar
-    timestamp_detected: Long //bigint
-  )
-  
-  case class DataB(
-    geographical_location_oid: Long, //bigint
-    geographical_location: String //varchar
-  )
-  
-  // Case class for the output data structure
-  case class Result(
-    geographical_location: Long, //bigint
-    item_rank: String, //varchar
-    item_name: String //varchar
-  )
+object ParquetCombinerRDD extends Logging {
+  private val DefaultTopXItems = 5
+  private val SampleNoRows = 3
+  private val DefaultNoRows = 10
 
   def main(args: Array[String]): Unit = {
-    // Parse command line arguments or use defaults
-    val dataAPath = if (args.length > 0) args(0) else "data/dataA"
-    val dataBPath = if (args.length > 1) args(1) else "data/dataB"
-    val outputPath = if (args.length > 2) args(2) else "data/output"
-    val topX = if (args.length > 3) args(3).toInt else 5 // Default to top 5 items
-    
-    // Create Spark session for standalone execution
-    val spark = SparkSession.builder()
+    // Create and manage Spark session
+    val spark = SparkSession
+      .builder()
       .appName("ParquetCombinerRDD")
       .master("local[*]")
-      // Configure with safe serialization settings
-      .config("spark.serializer", "org.apache.spark.serializer.JavaSerializer") // Use Java serializer instead of Kryo for compatibility
       .config("spark.sql.shuffle.partitions", "200")
       .config("spark.default.parallelism", "200")
-      .config("spark.rdd.compress", "true") // Compress RDDs to save memory
+      .config("spark.rdd.compress", "true")
       .getOrCreate()
-    
+
     try {
-      runWithSpark(spark, dataAPath, dataBPath, outputPath, topX)
+      processParquetFiles(spark, parseArgs(args))
     } finally {
       spark.stop()
     }
   }
 
-  // To allow existing SparkSession to be passed in
-  def runWithSpark(spark: SparkSession, dataAPath: String, dataBPath: String, outputPath: String, topX: Int): Unit = {
-    // Silence loggers
-    Logger.getRootLogger.setLevel(Level.ERROR)
-    
+  private def parseArgs(args: Array[String]): (String, String, String, Int) = {
+    val dataAPath = args.lift(0).getOrElse("src/test/resources/test-data/dataA")
+    val dataBPath = args.lift(1).getOrElse("src/test/resources/test-data/dataB")
+    val outputPath =
+      args.lift(2).getOrElse("src/test/resources/test-data/output")
+    val topX = args.lift(3).map(_.toInt).getOrElse(DefaultTopXItems)
+    (dataAPath, dataBPath, outputPath, topX)
+  }
+
+  def processParquetFiles(
+      spark: SparkSession,
+      paths: (String, String, String, Int)
+  ): Unit = {
+    val (dataAPath, dataBPath, outputPath, topX) = paths
+
     try {
-      println("\n===== PARQUET COMBINER =====")
-      println(s"Input A: $dataAPath")
-      println(s"Input B: $dataBPath")
-      println(s"Output: $outputPath")
-      println(s"Top X: $topX")
-      
-      // Read Parquet files into RDDs
-      val dataARDD = readParquetA(spark, dataAPath)
-      val dataBRDD = readParquetB(spark, dataBPath)
-      
-      // Show sample data
-      println("\nDataA Sample (3 records):")
-      dataARDD.take(3).foreach(println)
-      
-      println("\nDataB Sample (3 records):")
-      dataBRDD.take(3).foreach(println)
-      
-      // Process data using RDD operations
-      val resultRDD = processRDDs(dataARDD, dataBRDD, topX)
-      
-      // Show result sample
-      println("\nResult Sample (10 records):")
-      resultRDD.take(10).foreach(println)
-      
-      // Define output schema explicitly
-      val outputSchema = StructType(Seq(
-        StructField("geographical_location", LongType, true), 
-        StructField("item_rank", StringType, true),
-        StructField("item_name", StringType, true)
-      ))
-      
-      // Convert to DataFrame for writing to Parquet
-      val resultDF = spark.createDataFrame(
-        resultRDD.map(r => Row(r.geographical_location, r.item_rank, r.item_name)),
-        outputSchema
+      // Log input details
+      logger.info(s"""
+        |===== PARQUET COMBINER =====
+        |Input A: $dataAPath
+        |Input B: $dataBPath
+        |Output: $outputPath
+        |Top X: $topX
+      """.stripMargin)
+
+      // Read and cache input RDDs with explicit type casting
+      val cachedDataA: RDD[DataA] = DataReader
+        .readParquetA(spark, dataAPath)
+        .asInstanceOf[RDD[DataA]]
+        .persist(StorageLevel.MEMORY_AND_DISK_SER)
+      val cachedDataB: RDD[DataB] = DataReader
+        .readParquetB(spark, dataBPath)
+        .asInstanceOf[RDD[DataB]]
+        .persist(StorageLevel.MEMORY_AND_DISK_SER)
+
+      // Log sample data
+      logSampleData(cachedDataA, cachedDataB)
+
+      // Perform aggregations
+      val params = Map("topX" -> topX)
+      val (resultRDD, itemCountRDD, locationStatsRDD) = performAggregations(
+        cachedDataA,
+        cachedDataB,
+        params
       )
-      
-      // Write result to Parquet
-      resultDF.write
-        .mode(SaveMode.Overwrite)
-        .option("compression", "snappy") // Better compression
-        .parquet(outputPath)
-      
-      println(s"\nProcess completed successfully.")
-      println(s"Output written to: $outputPath")
-      println(s"Result contains ${resultRDD.count()} records")
-      println("===== PROCESSING COMPLETE =====\n")
+      // Write results to Parquet
+      writeResultToParquet(spark, resultRDD, outputPath)
+
+      // Clean up cached RDDs
+      cachedDataA.unpersist()
+      cachedDataB.unpersist()
+
+      // Final logging
+      logAggregationResults(resultRDD, outputPath)
     } catch {
       case e: Exception =>
-        println(s"ERROR: ${e.getMessage}")
+        logger.error(s"ERROR: ${e.getMessage}")
         e.printStackTrace()
-    } 
-  }
-  
-  // Read DataA from Parquet file
-  def readParquetA(spark: SparkSession, path: String): RDD[DataA] = {
-    val df = spark.read.parquet(path)
-    df.rdd.map(row => 
-      DataA(
-        row.getAs[Long]("geographical_location_oid"),
-        row.getAs[Long]("video_camera_oid"),
-        row.getAs[Long]("detection_oid"),
-        row.getAs[String]("item_name"),
-        row.getAs[Long]("timestamp_detected")
-      )
-    )
-  }
-  
-  // Read DataB from Parquet file
-  def readParquetB(spark: SparkSession, path: String): RDD[DataB] = {
-    val df = spark.read.parquet(path)
-    df.rdd.map(row => 
-      DataB(
-        row.getAs[Long]("geographical_location_oid"),
-        row.getAs[String]("geographical_location")
-      )
-    )
+    }
   }
 
-  /**
-   * Custom implementation of join to avoid using Spark's join operation.
-   * This reduces shuffle operations by broadcasting the smaller RDD.
-   */
-  def customJoin[K, V1, V2](left: RDD[(K, V1)], right: RDD[(K, V2)]): RDD[(K, (V1, V2))] = {
-    // Collect right RDD to driver as an array of (K, V2) pairs
-    val rightArray = right.collect()
-    
-    // Create a map from the array for lookups
-    val rightMap = rightArray.map(pair => (pair._1, pair._2)).toMap
-    
-    // Broadcast the map to all executors
-    val broadcastMap = left.sparkContext.broadcast(rightMap)
-    
-    // Use mapPartitions instead of flatMap for better performance
-    left.mapPartitions(iter => {
-      val bMap = broadcastMap.value
-      iter.flatMap { case (k, v1) =>
-        bMap.get(k) match {
-          case Some(v2) => Iterator.single((k, (v1, v2)))
-          case None => Iterator.empty
-        }
-      }
-    }, preservesPartitioning = true) // Preserve partitioning information
-  }
-  
-  // Process RDDs to produce the result
-  def processRDDs(dataARDD: RDD[DataA], dataBRDD: RDD[DataB], topX: Int): RDD[Result] = {
-    // Step 1: Remove duplicate detection_oid values
-    // Extract detection_oid as a key
-    val keyedByDetectionOid = dataARDD.map(dataA => (dataA.detection_oid, dataA))
-    // Reduce by key to keep only the first occurrence
-    val deduplicatedDetections = keyedByDetectionOid.reduceByKey((a, _) => a)
-    // Extract just the values
-    val deduplicatedDataA = deduplicatedDetections.values
-    
-    // Cache the deduplicated RDD for reuse
-    val cachedDeduplicatedDataA = deduplicatedDataA.persist(StorageLevel.MEMORY_AND_DISK_SER)
-    
-    // Step 2: Prepare for custom join by extracting join keys
-    val locationKeyedDataA = cachedDeduplicatedDataA.map(dataA => 
-      (dataA.geographical_location_oid, dataA))
-    
-    val locationKeyedDataB = dataBRDD.map(dataB => 
-      (dataB.geographical_location_oid, dataB))
-    
-    // Cache the smaller dataset (DataB) for reuse
-    val cachedLocationKeyedDataB = locationKeyedDataB.persist(StorageLevel.MEMORY_AND_DISK_SER)
-    
-    // Step 3: Use custom join instead of Spark's join
-    val joined = customJoin(locationKeyedDataA, cachedLocationKeyedDataB)
-    
-    // Step 4: Extract the item name from joined data
-    val locationAndItemName = joined.map { case (_, (dataA, dataB)) =>
-      (dataB.geographical_location_oid, dataA.item_name)
-    }
-    
-    // Step 5: Count items by location and name
-    val locationItemPairs = locationAndItemName.map { 
-      case (locationOid, itemName) => ((locationOid, itemName), 1) 
-    }
-    
-    val itemCounts = locationItemPairs.reduceByKey(_ + _)
+  private def logSampleData(
+      dataARDD: RDD[DataA],
+      dataBRDD: RDD[DataB]
+  ): Unit = {
+    logger.info("\nDataA Sample (3 records):")
+    dataARDD.take(SampleNoRows).foreach(record => logger.info(record.toString))
 
-    // Step 6: Creates an array of top items for each location in a single pass
-    // Initial value for each location: empty array of (item, count) pairs
-    val createCombiner = (itemCount: (String, Int)) => Array(itemCount)
-    
-    // Add a new value to an existing array, keeping only top X items sorted by count
-    val mergeValue = (topItems: Array[(String, Int)], itemCount: (String, Int)) => {
-      // Add the new item
-      val combined = topItems :+ itemCount
-      // Sort by count descending and take top X
-      combined.sortBy(-_._2).take(topX)
-    }
-    
-    // Merge two arrays, keeping only top X items sorted by count
-    val mergeCombiners = (arr1: Array[(String, Int)], arr2: Array[(String, Int)]) => {
-      // Combine the arrays
-      val combined = arr1 ++ arr2
-      // Sort by count descending and take top X
-      combined.sortBy(-_._2).take(topX)
-    }
-    
-    // Aggregate the top items for each location
-    val topItemsByLocation = itemCounts.map { 
-      case ((locationOid, itemName), count) => (locationOid, (itemName, count)) 
-    }.aggregateByKey(Array.empty[(String, Int)])(
-      mergeValue,
-      mergeCombiners
+    logger.info("\nDataB Sample (3 records):")
+    dataBRDD.take(SampleNoRows).foreach(record => logger.info(record.toString))
+  }
+
+  private def performAggregations(
+      cachedDataA: RDD[DataA],
+      cachedDataB: RDD[DataB],
+      params: Map[String, Any]
+  ): (
+      RDD[TopItemResult],
+      RDD[ItemCountResult],
+      RDD[LocationStatsResult]
+  ) = {
+    // Top Items Aggregation
+    val topItemsAggregation = AggregationFactory.createAggregation("topItems")
+    val resultRDD = topItemsAggregation
+      .asInstanceOf[AggregationOperation[TopItemResult]]
+      .aggregate(cachedDataA, cachedDataB, params)
+
+    // Item Count Aggregation
+    val itemCountAggregation = AggregationFactory.createAggregation("itemCount")
+    val itemCountRDD = itemCountAggregation
+      .asInstanceOf[AggregationOperation[ItemCountResult]]
+      .aggregate(cachedDataA, cachedDataB, params)
+
+    // Location Stats Aggregation
+    val locationStatsAggregation =
+      AggregationFactory.createAggregation("locationStats")
+    val locationStatsRDD = locationStatsAggregation
+      .asInstanceOf[AggregationOperation[LocationStatsResult]]
+      .aggregate(cachedDataA, cachedDataB, params)
+
+    // Log result samples
+    logAggregationSamples(resultRDD, itemCountRDD, locationStatsRDD)
+
+    (resultRDD, itemCountRDD, locationStatsRDD)
+  }
+
+  private def logAggregationSamples(
+      resultRDD: RDD[TopItemResult],
+      itemCountRDD: RDD[ItemCountResult],
+      locationStatsRDD: RDD[LocationStatsResult]
+  ): Unit = {
+    logger.info("\nTop Items Result Sample (10 records):")
+    resultRDD
+      .take(DefaultNoRows)
+      .foreach(record => logger.info(record.toString))
+
+    logger.info("\nItem Count Result Sample (5 records):")
+    itemCountRDD
+      .take(DefaultNoRows)
+      .foreach(record => logger.info(record.toString))
+
+    logger.info("\nLocation Stats Result Sample (5 records):")
+    locationStatsRDD
+      .take(DefaultNoRows)
+      .foreach(record => logger.info(record.toString))
+  }
+
+  private def writeResultToParquet(
+      spark: SparkSession,
+      resultRDD: RDD[TopItemResult],
+      outputPath: String
+  ): Unit = {
+    // Define output schema
+    val outputSchema = StructType(
+      Seq(
+        StructField("geographical_location", LongType, true),
+        StructField("item_rank", StringType, true),
+        StructField("item_name", StringType, true)
+      )
     )
-    
-    // Convert to the final Result objects
-    val ranked = topItemsByLocation.flatMap { case (locationOid, topItems) =>
-      // Create result objects with rank
-      topItems.zipWithIndex.map { case ((itemName, _), index) =>
-        Result(locationOid, (index + 1).toString, itemName)
-      }
-    }
-    
-    // Clean up by unpersisting cached RDDs
-    cachedDeduplicatedDataA.unpersist()
-    cachedLocationKeyedDataB.unpersist()
-    
-    ranked
+
+    // Convert to DataFrame and write
+    val resultDF = spark.createDataFrame(
+      resultRDD.map(r =>
+        Row(r.geographical_location_oid, r.item_rank, r.item_name)
+      ),
+      outputSchema
+    )
+
+    resultDF.write
+      .mode(SaveMode.Overwrite)
+      .option("compression", "snappy")
+      .parquet(outputPath)
+  }
+
+  private def logAggregationResults(
+      resultRDD: RDD[TopItemResult],
+      outputPath: String
+  ): Unit = {
+    logger.info(s"\nProcess completed successfully.")
+    logger.info(s"Output written to: $outputPath")
+    logger.info(s"Result contains ${resultRDD.count()} records")
+    logger.info("===== PROCESSING COMPLETE =====\n")
   }
 }
