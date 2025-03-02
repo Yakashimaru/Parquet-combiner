@@ -121,7 +121,8 @@ object Aggregations {
         .map { case (locationOid, items) =>
           // Count unique items and most active camera
           val uniqueItems = items.map(_._1).toSet.size
-          val cameraToCount = items.groupBy(_._2).view.mapValues(_.size).toMap
+          val cameraToCount =
+            items.groupBy(_._2).map { case (k, v) => (k, v.size) }.toMap
           val mostActiveCamera =
             if (cameraToCount.isEmpty) -1L else cameraToCount.maxBy(_._2)._1
 

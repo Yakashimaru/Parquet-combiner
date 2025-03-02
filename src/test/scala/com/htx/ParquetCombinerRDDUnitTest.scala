@@ -560,7 +560,8 @@ class ParquetCombinerRDDUnitTest extends AnyFunSuite with BeforeAndAfterAll {
     assert(location1Results.nonEmpty, "Should have results for skewed location")
 
     // Check item counts for location 1
-    val itemCounts = location1Results.groupBy(_._2).view.mapValues(_.size).toMap
+    val itemCounts =
+      location1Results.groupBy(_._2).map { case (k, v) => (k, v.size) }.toMap
     assert(
       itemCounts("item1") == 1,
       "item1 should have count 1 after processing"

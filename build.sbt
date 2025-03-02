@@ -1,6 +1,6 @@
 import sbt.Keys._
 
-val scala2Version = "2.13.16"
+val scala2Version = "2.12.18"
 val sparkVersion = "3.5.4"
 
 // Define custom run tasks for different logging levels
@@ -73,8 +73,6 @@ lazy val root = project
       "-feature",
       "-unchecked",
       "-Xlint",
-      "-Wdead-code",
-      "-Wunused:imports"
     ),
     
     // Ensure tests run in sequence 

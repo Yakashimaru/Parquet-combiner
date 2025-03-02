@@ -136,7 +136,10 @@ class ParquetCombinerRDDIntegrationTest
 
   test("Full pipeline execution with command line arguments") {
     // Call a modified version of main that accepts our SparkSession
-    ParquetCombinerRDD.runWithSpark(spark, dataAPath, dataBPath, outputPath, 3)
+    ParquetCombinerRDD.processParquetFiles(
+      spark,
+      (dataAPath, dataBPath, outputPath, 3)
+    )
 
     // Verify that output file exists
     val outputFile = new File(outputPath)
@@ -227,12 +230,9 @@ class ParquetCombinerRDDIntegrationTest
 
   test("Full pipeline execution with alternate topX value") {
     // Run the main method with test paths and topX = 2
-    ParquetCombinerRDD.runWithSpark(
+    ParquetCombinerRDD.processParquetFiles(
       spark,
-      dataAPath,
-      dataBPath,
-      outputPath + "_alt",
-      2
+      (dataAPath, dataBPath, outputPath + "_alt", 2)
     )
 
     // Verify that output file exists
@@ -308,12 +308,9 @@ class ParquetCombinerRDDIntegrationTest
 
     // Run the main method with test paths
     val duplicateOutputPath = s"$testDir/duplicate_output"
-    ParquetCombinerRDD.runWithSpark(
+    ParquetCombinerRDD.processParquetFiles(
       spark,
-      duplicateDataPath,
-      dataBPath,
-      duplicateOutputPath,
-      3
+      (duplicateDataPath, dataBPath, duplicateOutputPath, 3)
     )
 
     // Read back the output
