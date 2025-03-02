@@ -92,7 +92,7 @@ object ParquetCombinerRDD extends Logging {
         params
       )
       // Write results to Parquet
-      writeResultToParquet(spark, resultRDD, outputPath)
+      writeResultToParquet(spark, resultRDD, cachedDataB, outputPath)
 
       // Clean up cached RDDs
       cachedDataA.unpersist()
@@ -176,9 +176,27 @@ object ParquetCombinerRDD extends Logging {
   private def writeResultToParquet(
       spark: SparkSession,
       resultRDD: RDD[TopItemResult],
+      dataBRDD: RDD[DataB],
       outputPath: String
   ): Unit = {
+
+    // Create a mapping of location ID from DataB
+    val locationMap = dataBRDD
+      .map(loc => (loc.geographical_location_oid, loc.geographical_location))
+      .collectAsMap()
+
+    // Broadcast the mapping to all executors
+    val broadcastMap = spark.sparkContext.broadcast(locationMap)
+
+    // Use the mapping to include location names in the results
+    val joinedResults = resultRDD.map(r => {
+      // Look up the location from the broadcast map
+      Row(r.geographical_location_oid, r.item_rank, r.item_name)
+    })
+
     // Define output schema
+    // The "geographical_location" column in the final output 
+    // actually contains geographical_location_oid from datasetB
     val outputSchema = StructType(
       Seq(
         StructField("geographical_location", LongType, true),
@@ -188,13 +206,7 @@ object ParquetCombinerRDD extends Logging {
     )
 
     // Convert to DataFrame and write
-    val resultDF = spark.createDataFrame(
-      resultRDD.map(r =>
-        Row(r.geographical_location_oid, r.item_rank, r.item_name)
-      ),
-      outputSchema
-    )
-
+    val resultDF = spark.createDataFrame(joinedResults, outputSchema)
     resultDF.write
       .mode(SaveMode.Overwrite)
       .option("compression", "snappy")
