@@ -28,6 +28,25 @@ The application processes two Parquet files:
 | item_rank | varchar(500) | Rank of item (1 = most popular) |
 | item_name | varchar(5000) | Name of detected item |
 
+## Note on Output Format
+
+The output format follows the specification's type requirements, using `geographical_location_oid` as the `geographical_location` column with type `bigint` in the output. While it might seem more intuitive to use the descriptive location names from Dataset B, the requirements explicitly specify:
+
+**Output Column Specs:**
+- geographical_location | **bigint** | A unique bigint identifier for the geographical location
+
+This suggests that the output is designed to maintain the ID rather than the descriptive name.
+The implementation in `ParquetCombinerRDD.scala` follows this interpretation when defining the output schema:
+
+```scala
+val outputSchema = StructType(
+  Seq(
+    StructField("geographical_location", LongType, true),
+    StructField("item_rank", StringType, true),
+    StructField("item_name", StringType, true)
+  )
+)
+
 ## Key Requirements Implementation
 
 1. **Deduplication**: Each `detection_oid` is counted only once using `reduceByKey` operations.
