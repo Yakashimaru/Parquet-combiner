@@ -134,8 +134,45 @@ class ParquetCombinerRDDIntegrationTest
     dataBDF.write.mode(SaveMode.Overwrite).parquet(dataBPath)
   }
 
+  test("Output should use geographical location names from Dataset B") {
+    // Run the main method with test paths
+    ParquetCombinerRDD.processParquetFiles(
+      spark,
+      (dataAPath, dataBPath, outputPath + "_names", 3)
+    )
+
+    // Read back the output
+    val outputDF = spark.read.parquet(outputPath + "_names")
+
+    // Check the schema
+    assert(
+      outputDF.schema.fields(0).dataType === StringType,
+      "geographical_location should be StringType"
+    )
+
+    // Check that location names are used
+    val locationNames = outputDF
+      .select("geographical_location")
+      .distinct()
+      .collect()
+      .map(_.getString(0))
+      .toSet
+    assert(
+      locationNames.contains("New York"),
+      "Should contain 'New York' location name"
+    )
+    assert(
+      locationNames.contains("San Francisco"),
+      "Should contain 'San Francisco' location name"
+    )
+    assert(
+      locationNames.contains("Los Angeles"),
+      "Should contain 'Los Angeles' location name"
+    )
+  }
+
   test("Full pipeline execution with command line arguments") {
-    // Call a modified version of main that accepts our SparkSession
+    // Call a modified version of main that accepts the SparkSession
     ParquetCombinerRDD.processParquetFiles(
       spark,
       (dataAPath, dataBPath, outputPath, 3)
@@ -153,19 +190,19 @@ class ParquetCombinerRDDIntegrationTest
       Seq(
         StructField(
           "geographical_location",
-          LongType,
+          StringType,
           true
-        ), // Changed to 'true' for nullable
+        ),
         StructField(
           "item_rank",
           StringType,
           true
-        ), // Changed to 'true' for nullable
+        ),
         StructField(
           "item_name",
           StringType,
           true
-        ) // Changed to 'true' for nullable
+        )
       )
     )
 
@@ -174,12 +211,12 @@ class ParquetCombinerRDDIntegrationTest
       "Output schema should match expected schema"
     )
 
-    // We should have 3 locations x 3 items = 9 rows (adjusted for duplicates and actual counts)
-    // Spot check some expected values
+    // This should have 3 locations x 3 items = 9 rows (adjusted for duplicates and actual counts)
+    // Spot checks some expected values
 
     // Check New York's top item
     val nyTopItem = outputDF
-      .filter($"geographical_location" === 1) // For new york
+      .filter($"geographical_location" === "New York")
       .filter($"item_rank" === "1")
       .collect()
 
@@ -195,7 +232,7 @@ class ParquetCombinerRDDIntegrationTest
       .count()
       .collect()
       .map(row =>
-        (row.getAs[Long]("geographical_location"), row.getAs[Long]("count"))
+        (row.getAs[String]("geographical_location"), row.getAs[Long]("count"))
       )
       .toMap
 
@@ -215,7 +252,7 @@ class ParquetCombinerRDDIntegrationTest
       .collect()
 
     rankingCheck.foreach { row =>
-      val location = row.getAs[Long]("geographical_location")
+      val location = row.getAs[String]("geographical_location")
       val uniqueRanks = row.getAs[Long]("unique_ranks")
       val minRank = row.getAs[String]("min_rank")
       val maxRank = row.getAs[String]("max_rank")
@@ -252,7 +289,7 @@ class ParquetCombinerRDDIntegrationTest
       .count()
       .collect()
       .map(row =>
-        (row.getAs[Long]("geographical_location"), row.getAs[Long]("count"))
+        (row.getAs[String]("geographical_location"), row.getAs[Long]("count"))
       )
       .toMap
 
@@ -316,13 +353,13 @@ class ParquetCombinerRDDIntegrationTest
     // Read back the output
     val outputDF = spark.read.parquet(duplicateOutputPath)
 
-    // Check the count for New York (#1)
+    // Check the count for New York
     outputDF.createOrReplaceTempView("duplicate_output")
     val results = spark
       .sql("""
       SELECT item_name, item_rank
       FROM duplicate_output
-      WHERE geographical_location = 1
+      WHERE geographical_location = 'New York'
       ORDER BY item_rank
     """)
       .collect()

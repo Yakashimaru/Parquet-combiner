@@ -12,7 +12,7 @@ object ReadParquet extends Logging {
   private val defaultNoRows = 20
   private val maxNoRows = 100
   def main(args: Array[String]): Unit = {
-    if (args.isEmpty) {
+    if (args.length == 0) {
       printUsage()
     } else {
       // Parse arguments
@@ -38,10 +38,10 @@ object ReadParquet extends Logging {
   }
 
   private def printUsage(): Unit = {
-    logger.info("Usage: ReadParquet <file> [limit] [path]")
-    logger.info("  file: 'dataA', 'dataB', 'output', or a custom filename")
-    logger.info("  limit: Number of rows to display (default: 20)")
-    logger.info(
+    logger.error("Usage: ReadParquet <file> [limit] [path]")
+    logger.error("  file: 'dataA', 'dataB', 'output', or a custom filename")
+    logger.error("  limit: Number of rows to display (default: 20)")
+    logger.error(
       "  path: Custom directory path (default: src/test/resources/test-data/)"
     )
   }
@@ -91,7 +91,7 @@ object ReadParquet extends Logging {
     // Check if file exists
     val file = new File(fullPath)
     if (!file.exists()) {
-      logger.info(s"Error: File or directory not found at $fullPath")
+      logger.error(s"Error: File or directory not found at $fullPath")
     } else {
       // Read the Parquet file
       val readParquet = spark.read.parquet(fullPath)
@@ -136,7 +136,6 @@ object ReadParquet extends Logging {
     */
   def determineFileType(df: DataFrame): String = {
     val columns = df.columns.map(_.toLowerCase).toSet
-
     if (
       columns.contains("detection_oid") && columns.contains(
         "item_name"

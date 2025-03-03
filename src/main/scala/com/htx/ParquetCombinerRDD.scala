@@ -5,12 +5,7 @@
 package com.htx
 
 import org.apache.spark.sql.{SparkSession, Row, SaveMode}
-import org.apache.spark.sql.types.{
-  StructType,
-  StructField,
-  LongType,
-  StringType
-}
+import org.apache.spark.sql.types.{StructType, StructField, StringType}
 import org.apache.spark.storage.StorageLevel
 import com.htx.models.Models.{
   TopItemResult,
@@ -179,7 +174,6 @@ object ParquetCombinerRDD extends Logging {
       dataBRDD: RDD[DataB],
       outputPath: String
   ): Unit = {
-
     // Create a mapping of location ID from DataB
     val locationMap = dataBRDD
       .map(loc => (loc.geographical_location_oid, loc.geographical_location))
@@ -190,16 +184,16 @@ object ParquetCombinerRDD extends Logging {
 
     // Use the mapping to include location names in the results
     val joinedResults = resultRDD.map(r => {
-      // Look up the location from the broadcast map
-      Row(r.geographical_location_oid, r.item_rank, r.item_name)
+      // Look up the location name from the broadcast map
+      val locationName =
+        broadcastMap.value.getOrElse(r.geographical_location_oid, "Unknown")
+      Row(locationName, r.item_rank, r.item_name)
     })
 
     // Define output schema
-    // The "geographical_location" column in the final output
-    // actually contains geographical_location_oid from datasetB
     val outputSchema = StructType(
       Seq(
-        StructField("geographical_location", LongType, true),
+        StructField("geographical_location", StringType, true),
         StructField("item_rank", StringType, true),
         StructField("item_name", StringType, true)
       )
