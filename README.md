@@ -30,10 +30,10 @@ The application processes two Parquet files:
 
 ## Note on Output Format
 
-The output format follows the specification's type requirements, using `geographical_location_oid` as the `geographical_location` column with type `bigint` in the output. While it might seem more intuitive to use the descriptive location names from Dataset B, the requirements explicitly specify:
+The output format follows the specification's type requirements, using `geographical_location_oid` from Dataset B as the `geographical_location` column with type `bigint` in the output. While it might seem more intuitive to use the descriptive location names from Dataset B, the requirements explicitly specify:
 
 **Output Column Specs:**
-- geographical_location | **bigint** | A unique bigint identifier for the geographical location
+- geographical_location | **bigint** | A unique **bigint** identifier for the geographical location
 
 This suggests that the output is designed to maintain the ID rather than the descriptive name.
 The implementation in `ParquetCombinerRDD.scala` follows this interpretation when defining the output schema:
