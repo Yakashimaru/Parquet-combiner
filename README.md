@@ -46,6 +46,7 @@ val outputSchema = StructType(
     StructField("item_name", StringType, true)
   )
 )
+```
 
 ## Key Requirements Implementation
 
@@ -61,6 +62,7 @@ val outputSchema = StructType(
 7. **Data Skew Handling**: Custom implementation in `SkewedDataHandler` using data salting technique.
 
 ## Project Structure
+
 ```
 project-root/
 │
