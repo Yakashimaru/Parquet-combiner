@@ -8,7 +8,6 @@ import org.apache.spark.sql.{SparkSession, SaveMode}
 import org.apache.spark.sql.types.{
   StructType,
   StructField,
-  LongType,
   StringType
 }
 import org.scalatest.funsuite.AnyFunSuite

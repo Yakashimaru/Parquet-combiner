@@ -121,7 +121,7 @@ sbt "run [dataAPath] [dataBPath] [outputPath] [topX]"
 # Run with Spark Submit after assembly
 spark-submit \
   --class com.htx.ParquetCombinerRDD \
-  target/scala-2.12/htx_data_engineer_test_2.12-0.1.0-SNAPSHOT.jar \
+  target/scala-2.12/HTX_Data_Engineer_Test-assembly-0.1.0-SNAPSHOT.jar \
   [dataAPath] [dataBPath] [outputPath] [topX]
 ```
 
