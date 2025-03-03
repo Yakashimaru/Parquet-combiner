@@ -195,7 +195,7 @@ object ParquetCombinerRDD extends Logging {
     })
 
     // Define output schema
-    // The "geographical_location" column in the final output 
+    // The "geographical_location" column in the final output
     // actually contains geographical_location_oid from datasetB
     val outputSchema = StructType(
       Seq(
