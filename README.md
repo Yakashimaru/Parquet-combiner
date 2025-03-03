@@ -181,19 +181,21 @@ sbt "testOnly com.htx.ParquetCombinerRDDIntegrationTest"
 ## Testing Approach
 
 ### Unit Tests
-The unit test suite validates individual components:
-- TopItemsAggregation functionality
-- ItemCountAggregation accuracy
-- LocationStatsAggregation calculations
-- SkewedDataHandler implementation
-- Edge cases (empty inputs, duplicate handling, etc.)
+The unit test suite (`ParquetCombinerRDDUnitTest`) validates individual components:
+- Aggregation strategies (TopItems, ItemCount, LocationStats)
+- Proper deduplication of detection_oid values
+- Correct ranking and counting of items
+- Factory pattern implementation
+- SkewedDataHandler with salting technique
+- Edge cases (empty inputs, null values, etc.)
 
 ### Integration Tests
-The integration test suite validates end-to-end processing:
-- Full pipeline execution
+The integration test suite (`ParquetCombinerRDDIntegrationTest`) validates end-to-end processing:
+- Full pipeline execution with test data
 - Different topX configurations
 - Duplicate detection_oid handling
-- Output format correctness
+- Output schema and data validation
+- Test data generation and cleanup
 
 ## Design Considerations
 
