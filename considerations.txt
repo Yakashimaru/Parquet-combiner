@@ -80,8 +80,7 @@ SPARK CONFIGURATIONS
      usage and network traffic.
 
 3. Serialization:
-   - I used JavaSerializer for compatibility with complex case classes, 
-     as it’s more flexible.
+   - Made all models and operations serializable to support efficient data transfer between executors
 
 ALGORITHM COMPLEXITY
 ------------------
