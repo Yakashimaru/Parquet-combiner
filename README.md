@@ -1,4 +1,4 @@
-# HTX Data Engineer Technical Test
+# Scala Parquet File Combiner 
 
 ## Project Overview
 This Scala Spark project analyzes object detection data from video cameras across different geographical locations. The application processes Parquet datasets to identify and rank the most popular items detected by object detection algorithms, with a focus on performance optimization and proper handling of data duplication issues.
